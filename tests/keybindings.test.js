@@ -7,15 +7,17 @@ const RS = require("../plugin/core/RootSearch.js")
 const output = `SUPER SHIFT + F                    → File manager
 SUPER + W / SUPER + Q               → Close window
 SUPER SHIFT + H                     → Notion
+SUPER SHIFT + RETURN                → Browser
 SUPER + code:20                     → Custom → action
 `
 
 test("parses live display records, alternate chords and custom descriptions", () => {
   const rows = KB.parse(output)
-  assert.equal(rows.length, 4)
+  assert.equal(rows.length, 5)
   assert.equal(rows[0].shortcutKeys, "Super Shift F")
   assert.equal(rows[1].shortcutKeys, "Super W / Super Q")
-  assert.equal(rows[3].title, "Custom → action")
+  assert.equal(rows[3].shortcutKeys, "Super Shift Return")
+  assert.equal(rows[4].title, "Custom → action")
   assert.deepEqual(KB.parse(output + output), rows)
   assert.deepEqual(KB.parse("invalid\n → no chord\nSUPER + X → "), [])
 })
@@ -46,10 +48,14 @@ test("a single letter in a chord matches the key, not letters inside Shift", () 
   assert.equal(KB.search(rows, "super+shift+f", Ranker)[0].title, "File manager")
 })
 
-
 test("chord searches do not combine alternative chords or match a different key", () => {
   const rows = KB.parse("SUPER + W / SUPER SHIFT + Q → Close window\nSUPER + F20 → Other")
   assert.deepEqual(KB.search(rows, "super shift w", Ranker), [])
   assert.deepEqual(KB.search(rows, "super f2", Ranker), [])
   assert.equal(KB.search(rows, "super shift q", Ranker)[0].title, "Close window")
+})
+
+test("exact chords rank above chords with extra modifiers", () => {
+  const rows = KB.parse("SUPER ALT + F → Full width\nSUPER + F → Full screen")
+  assert.deepEqual(KB.search(rows, "super f", Ranker).map(row => row.title), ["Full screen", "Full width"])
 })

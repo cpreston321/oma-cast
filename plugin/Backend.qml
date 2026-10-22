@@ -36,7 +36,8 @@ Item {
   property var candidates: []
   property var candidatesById: ({})
   property int candidatesRevision: 0
-  readonly property bool loading: menuSource.loading || agentLauncher.checking || keybindingsSource.loading
+  readonly property bool loading: menuSource.loading || agentLauncher.checking
+    || (keybindingsSource.loading && !keybindingsSource.rows.length)
   // Bumped when exchange rates or zone offsets arrive, so an open
   // calculator row re-evaluates.
   readonly property int calculatorRevision: (calculatorData.rates ? 1 : 0) + calculatorData.ratesFetchedAt + calculatorData.zonesAt

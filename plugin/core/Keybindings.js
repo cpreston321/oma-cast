@@ -15,9 +15,9 @@ function parse(text) {
     rows.push({
       id: id, type: "command", kind: "keybinding", title: title,
       subtitle: "", shortcut: shortcut,
+      // SUPER, RETURN → Super, Return; single letters and F-keys stay as-is.
       shortcutKeys: shortcut.replace(/\s*\+\s*/g, " ")
-        .replace(/\bSUPER\b/g, "Super").replace(/\bSHIFT\b/g, "Shift")
-        .replace(/\bCTRL\b/g, "Ctrl").replace(/\bALT\b/g, "Alt"),
+        .replace(/\b([A-Z])([A-Z]+)\b/g, function(m, a, b) { return a + b.toLowerCase() }),
       keywords: [shortcut, "keyboard shortcut keybinding"],
       typeLabel: "", glyph: "", rootSearch: { when: "searching" }
     })
@@ -44,7 +44,16 @@ function search(rows, query, ranker) {
     })
   })
   // A modifier query asks for that actual chord, not a fuzzy near-match.
-  if (chordQuery) return direct
+  // Exact chords first: "super f" puts Super+F above Super+Alt+F.
+  if (chordQuery) {
+    var exact = function(row) {
+      return row.shortcut.split(" / ").some(function(chord) {
+        var keys = chord.toLowerCase().replace(/\+/g, " ").split(/\s+/).filter(Boolean)
+        return keys.length === tokens.length
+      })
+    }
+    return direct.filter(exact).concat(direct.filter(function(row) { return !exact(row) }))
+  }
   var seen = {}
   direct.forEach(function(row) { seen[row.id] = true })
   var fuzzy = ranker.rank(rows, q, { sensitivity: "medium" })

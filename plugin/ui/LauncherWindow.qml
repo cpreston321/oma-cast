@@ -133,6 +133,7 @@ PanelWindow {
   readonly property string placeholder: {
     var kind = window.view.kind
     if (kind === "alias") return "Type an alias, then press ↵"
+    if (kind === "keybindings") return window.backend.keybindingText("placeholder")
     if (kind === "script-input") return window.view.title + "…"
     if (kind === "quicklink-import") return "Path to a JSON file, or ↵ to import the clipboard"
     if (window.pickingApp) return "Search apps…"
@@ -266,6 +267,7 @@ PanelWindow {
       glyphFont: String(c.glyphFont || ""),
       iconName: String(c.iconName || ""),
       typeLabel: String(c.typeLabel || ""),
+      shortcutKeys: String(c.shortcutKeys || ""),
       alias: String(c.alias || ""),
       checked: !!c.checked,
       disabled: !!c.disabled,
@@ -971,7 +973,7 @@ PanelWindow {
       if (key === Qt.Key_PageUp) { window.move(-8); return true }
       if (key === Qt.Key_PageDown) { window.move(8); return true }
       if (ctrl && shift && key === Qt.Key_F) { window.performIfOffered(["favorite-add", "favorite-remove"]); return true }
-      if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer", "copy-link"]); return true }
+      if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer", "copy-link", "copy-shortcut"]); return true }
       if (ctrl && shift && key === Qt.Key_D) { window.performIfOffered(["delete-all-entries"]); return true }
       if (ctrl && key === Qt.Key_D) { window.performIfOffered(["delete-entry", "delete-quicklink", "delete-snippet"]); return true }
       if (ctrl && !shift && key === Qt.Key_E && window.performIfOffered(["edit-quicklink", "edit-snippet"])) return true

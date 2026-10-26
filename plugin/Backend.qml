@@ -17,6 +17,7 @@ import "core/Calculator.js" as Calculator
 import "core/Emoji.js" as Emoji
 import "core/Clipboard.js" as Clipboard
 import "core/ScriptMenu.js" as ScriptMenu
+import "core/Keybindings.js" as Keybindings
 import "services"
 
 Item {
@@ -41,6 +42,7 @@ Item {
   property var candidatesById: ({})
   property int candidatesRevision: 0
   readonly property bool loading: menuSource.loading || agentLauncher.checking || scriptRunner.running
+    || (keybindingsSource.loading && !keybindingsSource.rows.length)
   // plugin/ on disk, for the scripts bundled with it (ScriptMenu.SOURCES).
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
   // Bumped when a pushed view's data changes (clipboard, emoji usage, script
@@ -53,6 +55,26 @@ Item {
 
   signal notification(string method, var data)
 
+  // Newer Omarchy shells provide Translations. Keep it optional so the
+  // feature also loads on 4.0.5, using the bundled English catalog there.
+  property var keybindingStrings: null
+  readonly property var keybindingEnglish: {
+    try { return JSON.parse(keybindingCatalog.text()) } catch (e) { return ({}) }
+  }
+
+  FileView {
+    id: keybindingCatalog
+    path: Qt.resolvedUrl("i18n/en.json")
+    blockLoading: true
+    printErrors: false
+  }
+
+  function keybindingText(key) {
+    var id = "keybindings." + key
+    return backend.keybindingStrings ? backend.keybindingStrings.t(id) : (backend.keybindingEnglish[id] || id)
+  }
+
+  // ------------------------------------------------------------- dispatch
 
   function call(method, data) { return Rpc.call(backend.registry, method, data) }
   function callSync(method, data) { return Rpc.callSync(backend.registry, method, data) }
@@ -86,7 +108,15 @@ Item {
     var apps = backend.appEntries()
     for (var i = 0; i < apps.length; i++) if (apps[i] && apps[i].id) next.push(RootSearch.appCandidate(apps[i]))
     next = next.concat(RootSearch.menuCandidates(menuSource.tree, menuSource.guards, menuSource.providerItems, backend.deps))
-    for (var b = 0; b < RootSearch.BUILTINS.length; b++) next.push(RootSearch.builtinCandidate(RootSearch.BUILTINS[b]))
+    for (var b = 0; b < RootSearch.BUILTINS.length; b++) {
+      var builtin = RootSearch.builtinCandidate(RootSearch.BUILTINS[b])
+      if (builtin.id === "builtin:keybindings") {
+        builtin.title = backend.keybindingText("title")
+        builtin.subtitle = backend.keybindingText("subtitle")
+      }
+      next.push(builtin)
+    }
+    next = next.concat(keybindingsSource.rows)
     next = next.concat(backend.scriptCandidates())
     if (quicklinksStore.loaded) next = next.concat(Quicklinks.list(quicklinksStore.doc).map(Quicklinks.toCandidate))
     if (snippetsStore.loaded) next = next.concat(Snippets.list(snippetsStore.doc).map(function(item) { return Snippets.toCandidate(item, snippetsStore.doc, backend.snippetDeps) }))
@@ -418,6 +448,7 @@ Item {
     var query = String(data && data.query || "").trim()
     var candidate = backend.decorated(id)
     if (!candidate) throw new Error("Unknown command " + id)
+    if (candidate.kind === "keybinding" && action === "open") action = "copy-shortcut"
 
     if (action === "open") {
       switch (candidate.kind) {
@@ -428,6 +459,10 @@ Item {
         case "omarchy-action":
           if (candidate.disabled) return { toast: { style: "failure", title: candidate.title + " is already set up" } }
           backend.recordVisit(id, query)
+          if (/^omarchy(?:-menu-keybindings| menu keybindings)$/.test(candidate.action.trim())) {
+            keybindingsSource.refresh()
+            return { push: { kind: "keybindings", title: backend.keybindingText("title") } }
+          }
           backend.runShell(candidate.action)
           return { close: true }
         case "omarchy-menu":
@@ -450,6 +485,10 @@ Item {
           backend.recordVisit(id, query)
           if (candidate.run.quicklinks) return backend.quicklinksCommand(candidate.run.quicklinks)
           if (candidate.run.settings) return backend.openSettings(candidate.run.settings)
+          if (candidate.run.view === "keybindings") {
+            keybindingsSource.refresh()
+            return { push: { kind: "keybindings", title: candidate.title } }
+          }
           if (candidate.run.push) return { push: candidate.run.push }
           if (candidate.run.summon) backend.summonPlugin(candidate.run.summon, candidate.run.payload || "{}")
           return { close: true }
@@ -469,6 +508,10 @@ Item {
         backend.recordVisit(id, query)
         backend.launchApp(candidate)
         return { close: true }
+      case "copy-shortcut":
+        if (candidate.kind !== "keybinding") throw new Error("Not a keybinding")
+        Util.execArgv(["wl-copy", "--", candidate.shortcut])
+        return { toast: { style: "success", title: backend.keybindingText("copied") } }
       case "open-in-omarchy-menu":
         backend.summonPlugin("omarchy.menu", JSON.stringify({ menu: backend.omarchyRouteFor(candidate) }))
         return { close: true }
@@ -884,6 +927,12 @@ Item {
       search: function(data) {
         var query = String(data && data.query || "")
         var view = data && data.view
+        if (view && view.kind === "keybindings") {
+          var matches = Keybindings.search(keybindingsSource.rows, query, Ranker)
+          if (!matches.length && !keybindingsSource.error) return []
+          return [{ id: "keybindings", title: backend.keybindingText(keybindingsSource.error ? "refreshError" : "section"),
+            rows: matches }]
+        }
         var ctx = backend.searchContext()
         var sections
         if (view && view.kind === "menu") sections = RootSearch.submenuSections(backend.candidates, view.menuId, query, ctx, backend.deps)
@@ -920,7 +969,9 @@ Item {
           if (!fallback) throw new Error("Unknown command " + (data && data.id))
           return RootSearch.actionsFor({ kind: "fallback", title: fallback.title })
         }
-        return RootSearch.actionsFor(candidate)
+        var actions = RootSearch.actionsFor(candidate)
+        if (candidate.kind === "keybinding") actions[0].title = backend.keybindingText("copy")
+        return actions
       },
       getItemInfo: function(data) {
         var rowId = String(data && data.id || "")
@@ -1139,6 +1190,13 @@ Item {
   }
 
   Component.onCompleted: {
+    try {
+      var strings = Qt.createQmlObject('import qs.Commons; Translations {}', backend)
+      strings.directory = Qt.resolvedUrl("i18n")
+      strings.stringsChanged.connect(function() { rebuildTimer.restart() })
+      strings.languageChanged.connect(function() { keybindingsSource.refresh() })
+      backend.keybindingStrings = strings
+    } catch (e) { /* Omarchy 4.0.5: use the bundled English strings. */ }
     registerServices()
     mkdirs.running = true
   }
@@ -1163,6 +1221,7 @@ Item {
       menuSource.refresh()
       calculatorData.refresh()
       backend.refreshScriptMenus()
+      keybindingsSource.refresh()
     }
     if (method === "window.visibilityChanged" && data && !data.visible) agentLauncher.cancel()
   }
@@ -1192,6 +1251,11 @@ Item {
     id: menuSource
     onRevisionChanged: rebuildTimer.restart()
     onMessage: function(level, text, metadata) { backend.log(level, "omarchy-menu", text, metadata) }
+  }
+
+  KeybindingsSource {
+    id: keybindingsSource
+    onRevisionChanged: rebuildTimer.restart()
   }
 
   JsonStore {

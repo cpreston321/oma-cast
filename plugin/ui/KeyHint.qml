@@ -21,7 +21,8 @@ Row {
       width: Math.max(height, label.implicitWidth + Math.round(Style.space(10) * hint.zoom))
       // Keycap: follow Hyprland down to square, capped like Menu.qml.
       radius: Math.min(Style.cornerRadius, Math.round(Style.space(4) * hint.zoom))
-      color: Util.alpha(hint.color, 0.1)
+      // "/" separates alternative chords; draw it bare, not as a key.
+      color: modelData === "/" ? "transparent" : Util.alpha(hint.color, 0.1)
 
       Text {
         id: label

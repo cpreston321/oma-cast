@@ -135,8 +135,10 @@ by default). About 170 currencies, Bitcoin and gold included: `100 usd to aed`,
 `50 dirhams to usd`, `CA$100`, `1 btc`, `100 dollars in pounds`,
 `1 oz gold`, `10 g of silver in eur`. Ask for several at once with `and` or commas:
 `100 usd to eur and gbp`, `5 ft to cm, m`, `3pm london to nyc and tokyo`. Words like
-"pesos", "dinars" or "dollars" mean your currency when it's one of them. Pick what each unit converts to, or switch one off, in
-Settings → Calculator. Name a target with `to`/`in`: `180 cm in feet
+"pesos", "dinars" or "dollars" mean your currency when it's one of them. The defaults follow your measurement system (US, UK or Metric, from your
+locale): in the US `180 cm` → 5 ft 10.87 in and `70 kg` → 154.32 lb; in the UK
+`70 kg` → 11.02 st and a pint is 568 mL. Pick what each unit converts to, or
+switch one off, in Settings → Calculator. Name a target with `to`/`in`: `180 cm in feet
 and inches`, `1 gb to mb`, `16 oz to ml`, `1in to px`, `0 c in k`. Currencies,
 dates, time zones, bases and percentages work too. ↵ copies the answer.
 

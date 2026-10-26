@@ -327,3 +327,39 @@ test("conversionOptions lists each default with its choices and current target",
   assert.ok(row("kg").choices.some((c) => c.value === "oz") && !row("kg").choices.some((c) => c.value === "kg"), "same kind, not itself")
   assert.deepEqual(row("°C").choices.map((c) => c.value).sort(), ["K", "°F"])
 })
+
+// ---- fork: measurement systems
+
+test("the measurement system picks the defaults and what imperial words mean", () => {
+  const as = (system, q) => { const r = C.evaluate(q, Object.assign({}, env, { measurementSystem: system })); return r && r.result }
+  assert.equal(as("us", "70 kg"), "154.3236 lb")
+  assert.equal(as("uk", "70 kg"), "11.0231 st", "UK body weight in stone")
+  assert.equal(as("us", "300 k"), "80.33 °F")
+  assert.equal(as("metric", "300 k"), "26.85 °C")
+  assert.equal(as("us", "10 m/s"), "22.3694 mph")
+  assert.equal(as("metric", "10 m/s"), "36 km/h")
+  assert.equal(as("us", "180 cm"), "5 ft 10.87 in", "US and UK heights in feet and inches")
+  assert.equal(as("uk", "1.8 m"), "5 ft 10.87 in")
+  assert.equal(as("us", "30 cm"), "11.81 in", "no 0 ft")
+  assert.equal(as("metric", "180 cm"), "70.8661 in")
+  assert.equal(as("us", "180 cm to in"), "70.8661 in", "a named target wins")
+  assert.equal(as("uk", "1 pint to ml"), "568.2613 mL", "a UK pint is imperial")
+  assert.equal(as("us", "1 pint to ml"), "473.1765 mL")
+  assert.equal(as("uk", "1 gal to L"), "4.5461 L")
+  assert.equal(as("uk", "1 us gallon to L"), "3.7854 L", "unless it says US")
+  assert.equal(as("uk", "2 L"), "3.5195 imp pt")
+  assert.equal(as(undefined, "70 kg"), "154.3236 lb", "metric when unset")
+})
+
+test("the system comes from the locale; feet and inches is a choice for lengths", () => {
+  assert.equal(C.measurementSystem("en_US"), "us")
+  assert.equal(C.measurementSystem("en_GB.UTF-8"), "uk")
+  assert.equal(C.measurementSystem("de_DE"), "metric")
+  assert.equal(C.measurementSystem("C"), "metric")
+  const cm = C.conversionOptions({}, "us").find((r) => r.from === "cm")
+  assert.equal(cm.target, "ft+in")
+  assert.equal(C.conversionOptions({}, "metric").find((r) => r.from === "cm").target, "in")
+  assert.equal(cm.choices.find((c) => c.value === "ft+in").label, "Feet and inches (5 ft 10 in)")
+  const m = (q) => { const r = C.evaluate(q, Object.assign({}, env, { conversionTargets: { cm: "ft+in" } })); return r && r.result }
+  assert.equal(m("180 cm"), "5 ft 10.87 in", "a metric user can pick it too")
+})

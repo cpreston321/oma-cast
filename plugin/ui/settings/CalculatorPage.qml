@@ -14,6 +14,7 @@ SettingsPage {
 
   readonly property var currencies: {
     page.backend.calculatorRevision
+    page.backend.config
     var r = page.backend.callSync("calculator.getCurrencies", null)
     return r.ok ? r.data : ({})
   }
@@ -23,6 +24,7 @@ SettingsPage {
     return r.ok ? r.data.length : 0
   }
   property bool confirmClear: false
+  readonly property var systemNames: ({ us: "US customary", uk: "UK imperial", metric: "Metric" })
 
   // Each unit a lone amount converts (Calculator.conversionOptions).
   readonly property var conversions: {
@@ -150,6 +152,24 @@ SettingsPage {
         }
       }
     }
+    SettingRow {
+      look: page.look
+      label: "Measurement system"
+      description: "Sets the defaults below, and what “gal”, “pint” and “fl oz” mean (larger imperial measures in the UK). Automatic follows your locale (" + (page.currencies.locale || "") + ")."
+      Select {
+        width: Style.space(260)
+        showLabel: false
+        options: [
+          { value: "auto", label: "Automatic (" + page.systemNames[page.currencies.localeMeasurement || "metric"] + ")" },
+          { value: "us", label: page.systemNames.us },
+          { value: "uk", label: page.systemNames.uk },
+          { value: "metric", label: page.systemNames.metric }
+        ]
+        value: page.backend.config.measurementSystem || "auto"
+        onChanged: function(v) { page.setConfig({ measurementSystem: v }) }
+      }
+    }
+
     Item { width: 1; height: Style.space(18) }
     Item {
       width: parent ? parent.width : 0
@@ -169,7 +189,7 @@ SettingsPage {
     Text {
       width: parent ? parent.width : 0
       textFormat: Text.PlainText
-      text: "“16rem” or “5 kg” on its own converts to the unit below. Naming a target (“5 kg to g”) always wins."
+      text: "“16rem” or “5 kg” on its own converts to the unit below; the defaults follow your measurement system. Naming a target (“5 kg to g”) always wins."
       color: page.look.muted
       wrapMode: Text.Wrap
       font.family: page.look.fontFamily

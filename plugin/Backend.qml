@@ -191,8 +191,15 @@ Item {
       workHoursPerDay: backend.config.workHoursPerDay,
       homeCurrency: backend.homeCurrency(),
       secondCurrency: backend.secondCurrency(),
-      conversionTargets: backend.config.conversionTargets
+      conversionTargets: backend.config.conversionTargets,
+      measurementSystem: backend.measurementSystem()
     }
+  }
+
+  // "us", "uk" or "metric": config measurementSystem, or the locale's.
+  function measurementSystem() {
+    var set = backend.config.measurementSystem
+    return set && set !== "auto" ? set : Calculator.measurementSystem(Qt.locale().name)
   }
 
   // Where a lone amount of money converts to (config homeCurrency/secondCurrency).
@@ -1487,19 +1494,19 @@ Item {
         return null
       },
       // Settings: every unit a lone amount converts, with its target and choices.
-      conversionOptions: function() { return Calculator.conversionOptions(backend.config.conversionTargets) },
+      conversionOptions: function() { return Calculator.conversionOptions(backend.config.conversionTargets, backend.measurementSystem()) },
       // {from, target}: target "" restores the default.
       setConversion: function(data) {
         var from = String(data && data.from || "")
         var target = String(data && data.target || "")
-        var row = Calculator.conversionOptions({}).filter(function(o) { return o.from === from })[0]
+        var row = Calculator.conversionOptions({}, backend.measurementSystem()).filter(function(o) { return o.from === from })[0]
         if (!row) throw new Error("No default conversion for " + from)
         if (target && target !== "none" && !row.choices.some(function(c) { return c.value === target })) throw new Error(target + " is not a kind of " + row.kind.toLowerCase())
         var next = Object.assign({}, backend.config.conversionTargets || {})
         if (!target || target === row.defaultTarget) delete next[from]
         else next[from] = target
         backend.updateConfig({ conversionTargets: next })
-        return Calculator.conversionOptions(next).filter(function(o) { return o.from === from })[0]
+        return Calculator.conversionOptions(next, backend.measurementSystem()).filter(function(o) { return o.from === from })[0]
       },
       resetConversions: function() { backend.updateConfig({ conversionTargets: {} }); return null },
       getCurrencies: function() {
@@ -1517,6 +1524,8 @@ Item {
             return out
           })(),
           home: backend.homeCurrency(),
+          measurement: backend.measurementSystem(),
+          localeMeasurement: Calculator.measurementSystem(Qt.locale().name),
           second: backend.secondCurrency(),
           locale: Qt.locale().name,
           fetchedAt: calculatorData.ratesFetchedAt || null,

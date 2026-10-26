@@ -183,7 +183,9 @@ def(["cm³", "cm3", "cc"], ["cubic centimeter", "cubic centimeters"], L3, 1e-6)
 def(["ft³", "ft3"], ["cubic foot", "cubic feet"], L3, 0.028316846592)
 def(["in³", "in3"], ["cubic inch", "cubic inches"], L3, 1.6387064e-5)
 def(["gal"], ["gallon", "gallons"], L3, 3.785411784e-3, { aliases: ["us gallon", "us gallons"] })
-def([], ["imperial gallon", "imperial gallons"], L3, 4.54609e-3, { display: "imp gal" })
+def([], ["imperial gallon", "imperial gallons"], L3, 4.54609e-3, { display: "imp gal", aliases: ["uk gallon", "uk gallons"] })
+var IMP_PINT = def([], ["imperial pint", "imperial pints"], L3, 5.6826125e-4, { display: "imp pt", aliases: ["uk pint", "uk pints"] })
+var IMP_FLOZ = def([], ["imperial fluid ounce", "imperial fluid ounces"], L3, 2.84130625e-5, { display: "imp fl oz", aliases: ["imperial fl oz", "uk fl oz"] })
 def(["qt"], ["quart", "quarts"], L3, 9.46352946e-4)
 def([], ["pint", "pints"], L3, 4.73176473e-4, { display: "pints", long: true })
 def(["cup"], ["cup", "cups"], L3, 2.365882365e-4, { long: true })
@@ -507,22 +509,62 @@ alias("mbps", UNITS.Mbps); alias("gbps", UNITS.Gbps); alias("tbps", UNITS.Tbps)
 alias("′", UNITS.ft, true); alias("″", UNITS["in"], true)
 
 // A lone amount and unit ("16rem", "5 kg", "100 f") converts to its obvious
-// counterpart, as omalaunch did. A bare number or word never does. [D]
-var COUNTERPARTS = [
+// counterpart, as omalaunch did, and which one depends on where you live:
+// the measurement system ("us", "uk" or "metric"; env.measurementSystem).
+// Each pair is [from, to], by symbol or, for units with none, by name. A bare
+// number or word never converts. [D]
+var SHARED_COUNTERPARTS = [
   ["rem", "px"], ["em", "px"], ["px", "rem"], ["pt", "px"],
-  ["in", "cm"], ["cm", "in"], ["mm", "in"], ["m", "ft"], ["km", "mi"], ["mi", "km"], ["ft", "cm"], ["yd", "m"], ["nmi", "km"],
-  // Not stone: "1st" is an ordinal far more often than a weight.
-  ["lb", "kg"], ["kg", "lb"], ["oz", "g"], ["g", "oz"], ["t", "lb"],
-  ["L", "gal"], ["gal", "L"], ["mL", "floz"], ["floz", "mL"], ["cup", "mL"], ["tsp", "mL"], ["tbsp", "mL"], ["qt", "L"],
-  ["°C", "°F"], ["°F", "°C"], ["K", "°C"],
-  ["mph", "km/h"], ["km/h", "mph"], ["kn", "km/h"], ["m/s", "km/h"],
-  ["m²", "ft²"], ["ft²", "m²"], ["km²", "mi²"], ["mi²", "km²"], ["ac", "ha"], ["ha", "ac"],
-  ["hp", "kW"], ["kW", "hp"], ["kcal", "kJ"], ["kJ", "kcal"], ["kWh", "MJ"],
-  ["psi", "bar"], ["bar", "psi"], ["atm", "kPa"], ["kPa", "psi"],
   ["°", "rad"], ["rad", "°"],
   ["GB", "GiB"], ["GiB", "GB"], ["TB", "TiB"], ["TiB", "TB"], ["MB", "MiB"], ["MiB", "MB"]
 ]
-var NAMED_COUNTERPARTS = [["pints", "mL"], ["tons", "kg"]]
+// Both directions between metric and US units, which helps whichever side
+// you're on; the presets differ where countries do.
+var METRIC_US = [
+  ["in", "cm"], ["ft", "cm"], ["yd", "m"], ["mi", "km"], ["cm", "in"], ["mm", "in"], ["m", "ft"], ["km", "mi"],
+  // Not stone from "st": "1st" is an ordinal far more often than a weight.
+  ["lb", "kg"], ["oz", "g"], ["tons", "kg"], ["kg", "lb"], ["g", "oz"],
+  ["°F", "°C"], ["°C", "°F"],
+  ["gal", "L"], ["floz", "mL"], ["cup", "mL"], ["tsp", "mL"], ["tbsp", "mL"], ["qt", "L"], ["pints", "mL"], ["L", "gal"], ["mL", "floz"],
+  ["mph", "km/h"], ["km/h", "mph"],
+  ["ft²", "m²"], ["mi²", "km²"], ["ac", "ha"], ["m²", "ft²"], ["km²", "mi²"], ["ha", "ac"],
+  ["hp", "kW"], ["kW", "hp"], ["kcal", "kJ"], ["kJ", "kcal"], ["kWh", "MJ"],
+  ["psi", "bar"], ["bar", "psi"], ["kPa", "psi"]
+]
+var PRESETS = {
+  // US and UK heights read as feet and inches: 180 cm is 5 ft 10.87 in.
+  us: METRIC_US.map(function(p) { return p[0] === "cm" || p[0] === "m" ? [p[0], "ft+in"] : p })
+    .concat([["K", "°F"], ["m/s", "mph"], ["kn", "mph"], ["nmi", "mi"], ["t", "tons"], ["atm", "psi"]]),
+  metric: METRIC_US.concat([["K", "°C"], ["m/s", "km/h"], ["kn", "km/h"], ["nmi", "km"], ["t", "lb"], ["atm", "kPa"]]),
+  // UK: body weight in stone, roads in miles, and imperial pints and gallons.
+  uk: METRIC_US.map(function(p) {
+    if (p[0] === "cm" || p[0] === "m") return [p[0], "ft+in"]
+    if (p[0] === "kg") return ["kg", "st"]
+    if (p[0] === "L") return ["L", "imperial pint"]
+    if (p[0] === "mL") return ["mL", "imperial fluid ounce"]
+    return p
+  }).concat([["st", "kg"], ["imperial gallon", "L"], ["imperial pint", "mL"], ["imperial fluid ounce", "mL"],
+    ["K", "°C"], ["m/s", "mph"], ["kn", "mph"], ["nmi", "km"], ["t", "lb"], ["atm", "kPa"]])
+}
+var SYSTEMS = ["us", "uk", "metric"]
+
+// The measurement system of a locale ("en_US" -> "us"). [D]
+function measurementSystem(localeName) {
+  var country = String(localeName || "").split(/[_.@-]/)[1] || ""
+  if (["US", "LR", "MM"].indexOf(country) >= 0) return "us"
+  if (["GB", "IM", "JE", "GG"].indexOf(country) >= 0) return "uk"
+  return "metric"
+}
+
+function systemOf(name) { return SYSTEMS.indexOf(name) >= 0 ? name : "metric" }
+
+// "Feet and inches" as a target (5 ft 10.87 in), for heights; a pseudo unit
+// that only counterpart() and the Settings choices know. [D]
+var FEET_INCHES = { sym: "ft+in", name: "feet and inches", plural: "feet and inches", dims: dims(L), factor: 0.3048, offset: 0,
+  long: false, currency: "", hint: "", atoms: [] }
+
+// A preset key: a symbol, else a unit name.
+function unitFor(key) { return key === "ft+in" ? FEET_INCHES : (UNITS[key] || UNIT_NAMES[key] || null) }
 
 // Every named, non-currency unit by its display symbol (sym), including the
 // ones registered only by name (pints, tons).
@@ -530,20 +572,36 @@ var UNIT_BY_SYM = {}
 ;(function() {
   var all = Object.keys(UNITS).map(function(k) { return UNITS[k] }).concat(Object.keys(UNIT_NAMES).map(function(k) { return UNIT_NAMES[k] }))
   for (var i = 0; i < all.length; i++) if (!all[i].currency && !UNIT_BY_SYM[all[i].sym]) UNIT_BY_SYM[all[i].sym] = all[i]
+  UNIT_BY_SYM[FEET_INCHES.sym] = FEET_INCHES
 })()
 
 // [from sym, default target sym] for each unit a lone amount converts.
-function counterpartDefaults() {
+// [from sym, default target sym] for each unit a lone amount converts, for
+// a measurement system ("us", "uk", "metric").
+function counterpartDefaults(system) {
+  // The everyday kinds (length, weight…) first, then CSS, angles and data.
+  var pairs = PRESETS[systemOf(system)].concat(SHARED_COUNTERPARTS)
   var out = []
-  for (var i = 0; i < COUNTERPARTS.length; i++) if (UNITS[COUNTERPARTS[i][0]]) out.push([UNITS[COUNTERPARTS[i][0]].sym, UNITS[COUNTERPARTS[i][1]].sym])
-  for (var j = 0; j < NAMED_COUNTERPARTS.length; j++) if (UNIT_NAMES[NAMED_COUNTERPARTS[j][0]]) out.push([UNIT_NAMES[NAMED_COUNTERPARTS[j][0]].sym, UNITS[NAMED_COUNTERPARTS[j][1]].sym])
+  for (var i = 0; i < pairs.length; i++) {
+    var from = unitFor(pairs[i][0]), to = unitFor(pairs[i][1])
+    if (from && to && !out.some(function(o) { return o[0] === from.sym })) out.push([from.sym, to.sym])
+  }
   return out
+}
+
+// In the UK, "gal", "pint" and "fl oz" are imperial; "us gallon" stays US.
+function regional(unit, phrase) {
+  if (!ENV || systemOf(ENV.measurementSystem) !== "uk" || /^us\b/.test(phrase)) return unit
+  if (unit === UNITS.gal) return UNIT_NAMES["imperial gallon"]
+  if (unit === UNIT_NAMES.pint) return IMP_PINT
+  if (unit === UNITS.floz) return IMP_FLOZ
+  return unit
 }
 
 // The default target, unless config.json conversionTargets (env) names
 // another unit of the same kind, or "none". Anything else is ignored.
 function counterpart(unit) {
-  var defaults = counterpartDefaults()
+  var defaults = counterpartDefaults(ENV && ENV.measurementSystem)
   var entry = defaults.filter(function(d) { return d[0] === unit.sym })[0]
   if (!entry) return null
   var overrides = ENV && ENV.conversionTargets
@@ -573,14 +631,14 @@ function parseKind(text) {
 // For Settings: each unit a lone amount converts, its default and current
 // target, and the units it could convert to instead (smallest first).
 // overrides: config.json conversionTargets.
-function conversionOptions(overrides) {
+function conversionOptions(overrides, system) {
   var syms = Object.keys(UNIT_BY_SYM)
-  return counterpartDefaults().map(function(d) {
+  return counterpartDefaults(system).map(function(d) {
     var from = UNIT_BY_SYM[d[0]]
     var choices = syms.map(function(s) { return UNIT_BY_SYM[s] })
       .filter(function(u) { return u !== from && sameDims(u.dims, from.dims) })
       .sort(function(a, b) { return toBase(1, a) - toBase(1, b) })
-      .map(function(u) { return { value: u.sym, label: titleCase(u.plural) + " (" + u.sym + ")" } })
+      .map(function(u) { return { value: u.sym, label: u === FEET_INCHES ? "Feet and inches (5 ft 10 in)" : titleCase(u.plural) + " (" + u.sym + ")" } })
     var set = overrides && Object.prototype.hasOwnProperty.call(overrides, d[0]) ? overrides[d[0]] : ""
     var valid = set === "none" || choices.some(function(c) { return c.value === set })
     return {
@@ -1055,7 +1113,7 @@ Parser.prototype.matchUnit = function(afterNumber) {
         if (baseUnit && dimsKey(baseUnit.dims) === "L1") unit = unitPow(baseUnit, sq[1] === "cubic" ? 3 : 2).unit
       }
     }
-    if (unit) return { unit: unit, len: n }
+    if (unit) return { unit: regional(unit, lower), len: n }
   }
   return null
 }
@@ -1675,6 +1733,7 @@ function feetAndInches(meters) {
   var rest = Math.round((inches - ft * 12) * 100) / 100
   if (rest >= 12) { ft++; rest = 0 }
   var restText = trimNumber(rest)
+  if (ft === 0) return { display: sign + restText + " in", copy: sign + restText + "″" }
   return { display: sign + ft + " ft " + restText + " in", copy: sign + ft + "′" + restText + "″" }
 }
 
@@ -1751,6 +1810,11 @@ function evaluateOne(query, env) {
     if (state.ops === 0 && value.type === "num" && value.unit && !value.pct && !value.unit.currency && /\d/.test(q)) {
       var other = counterpart(value.unit)
       if (!other) return null
+      if (other === FEET_INCHES) {
+        var height = feetAndInches(toBase(value.n, value.unit))
+        return { kind: "conversion", input: original, result: height.display, copy: height.copy, value: value.n,
+          inputCaption: titleCase(value.unit.plural), resultCaption: "Feet and Inches" }
+      }
       state.kind = "conversion"
       state.fromUnit = value.unit
       state.toUnit = other
@@ -1826,6 +1890,7 @@ if (typeof module !== "undefined") {
     words: numberWords,
     zoneList: zoneList,
     localeCurrency: localeCurrency,
+    measurementSystem: measurementSystem,
     conversionOptions: conversionOptions,
     currencyName: currencyName,
     pushHistory: pushHistory,

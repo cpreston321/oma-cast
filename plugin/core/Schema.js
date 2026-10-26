@@ -205,13 +205,17 @@ var configDefaults = {
   secondCurrency: "auto",
   // What a lone amount converts to, where it isn't the default: {"kg": "g",
   // "°F": "none"} (Calculator.conversionOptions lists the choices). [D]
-  conversionTargets: {}
+  conversionTargets: {},
+  // Which preset of lone conversions applies, and what "gal" and "pint" mean:
+  // "us", "uk" or "metric"; "auto" follows the locale. [D]
+  measurementSystem: "auto"
 }
 
 // Values a config key or general setting may take, beyond its type.
 var configChoices = {
   clockFormat: ["auto", "12h", "24h"],
-  logLevel: ["trace", "debug", "info", "warning", "error", "fatal"]
+  logLevel: ["trace", "debug", "info", "warning", "error", "fatal"],
+  measurementSystem: ["auto", "us", "uk", "metric"]
 }
 
 var generalChoices = {

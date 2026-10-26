@@ -421,7 +421,8 @@ PanelWindow {
       return true
     }
     if (key === Qt.Key_Backspace && !value) { window.argFocus--; return true }
-    if (Util.editsFilter(event, value)) { set(Util.editedFilter(event, value)); return true }
+    // editsFilter skips an empty value; an edit key there must not fall through to the search text.
+    if (Util.editsFilter(event, value || " ")) { if (value) set(Util.editedFilter(event, value)); return true }
     if (window.isTyping(event)) { set(value + event.text); return true }
     return false
   }
@@ -706,7 +707,8 @@ PanelWindow {
 
     if (window.alert) {
       if (key === Qt.Key_Escape) window.alert = null
-      else if (enter) window.confirmAlert()
+      // A held Enter that opened the alert must not also confirm it.
+      else if (enter && !event.isAutoRepeat) window.confirmAlert()
       return true
     }
     if (key === Qt.Key_Escape) { window.handleEscape(shift); return true }

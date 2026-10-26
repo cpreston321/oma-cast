@@ -39,11 +39,6 @@ Omarchy's built-in menu is great at what it does. oma-cast adds what Raycast use
 </p>
 <p align="center"><b>No match? Send the query to Google or DuckDuckGo</b></p>
 
-<p align="center">
-  <img src="docs/screenshots/quicklinks.png" alt="A GitHub quicklink with its owner and repo arguments typed inline" width="49%">
-</p>
-<p align="center"><b>Quicklinks: press Tab and type the arguments inline</b></p>
-
 ### Follows your Omarchy theme
 
 There's no theme config. oma-cast binds to Omarchy's own colours, so it changes the moment you switch themes.

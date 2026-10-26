@@ -138,7 +138,7 @@ function toCandidate(item) {
     glyph: item.iconName ? "" : "",   // nf-fa-link
     iconName: item.iconName || "",
     quicklinkId: item.id,
-    // [O] Up to 3 arguments become inline fields after the search text.
+    // [O] Up to 3 arguments become argument pills after the search text.
     // Pills read {placeholder, required}; a default makes one optional.
     arguments: parsed.error ? [] : parsed.arguments.map(function(a) {
       return {

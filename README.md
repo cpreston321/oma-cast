@@ -132,7 +132,10 @@ to the obvious counterpart: `16rem` → 256 px, `5 kg` → 11.02 lb, `100 f` →
 37.78 °C, `5'10"` → 177.8 cm. Money works the same way: `€50` converts to your currency
 and `$100` to your second one (Settings → Calculator; both follow your locale
 by default). About 170 currencies, Bitcoin and gold included: `100 usd to aed`,
-`50 dirhams to usd`, `CA$100`, `1 btc`, `100 dollars in pounds`. Name a target with `to`/`in`: `180 cm in feet
+`50 dirhams to usd`, `CA$100`, `1 btc`, `100 dollars in pounds`,
+`1 oz gold`, `10 g of silver in eur`. Ask for several at once with `and` or commas:
+`100 usd to eur and gbp`, `5 ft to cm, m`, `3pm london to nyc and tokyo`. Words like
+"pesos", "dinars" or "dollars" mean your currency when it's one of them. Name a target with `to`/`in`: `180 cm in feet
 and inches`, `1 gb to mb`, `16 oz to ml`, `1in to px`, `0 c in k`. Currencies,
 dates, time zones, bases and percentages work too. ↵ copies the answer.
 

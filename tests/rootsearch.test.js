@@ -368,3 +368,15 @@ test("paste or copy goes first per preference, taking ↵", () => {
   assert.deepEqual(ids("snippet"), ["paste-snippet ↵", "copy-snippet Ctrl ↵"])
   assert.deepEqual(ids("snippet", { snippet: "copy" }), ["copy-snippet ↵", "paste-snippet Ctrl ↵"])
 })
+
+test("a calculation with several answers gets a row each, with indexed ids", () => {
+  const calc = { kind: "currency", input: "100 usd to eur and gbp", result: "€89.29", copy: "€89.29", resultCaption: "Euro (EUR)",
+    alternatives: [{ result: "£75.00", copy: "£75.00", resultCaption: "British Pound (GBP)" }] }
+  const section = results("100 usd to eur and gbp", ctx({ calculation: calc })).find((s) => s.id === "calculator")
+  assert.deepEqual(section.rows.map((r) => [r.candidate.id, r.candidate.calcResult]), [["calculator:result", "€89.29"], ["calculator:result:1", "£75.00"]])
+  assert.equal(RS.calculatorIndex("calculator:result"), 0)
+  assert.equal(RS.calculatorIndex("calculator:result:1"), 1)
+  assert.equal(RS.calculatorIndex("calculator-history:5"), -1)
+  assert.equal(RS.calculationAt(calc, 1).copy, "£75.00")
+  assert.equal(RS.calculationAt(calc, 2), null)
+})

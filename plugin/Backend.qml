@@ -1234,7 +1234,7 @@ Item {
         var file = fileSource.lookup(rowId)
         if (file) return RootSearch.actionsFor(file)
         var prefs = backend.primaryPrefs()
-        if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" }, prefs)
+        if (RootSearch.calculatorIndex(rowId) >= 0) return RootSearch.actionsFor({ kind: "calculator" }, prefs)
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" }, prefs)
         if (rowId.indexOf("emoji:") === 0) return RootSearch.actionsFor({ kind: "emoji" }, prefs)
         if (rowId.indexOf("clipboard:") === 0) return RootSearch.actionsFor({ kind: "clipboard" }, prefs)
@@ -1259,9 +1259,9 @@ Item {
       getItemInfo: function(data) {
         var rowId = String(data && data.id || "")
         var nowMs = Date.now()
-        if (rowId === RootSearch.CALCULATOR_ID) {
-          var calc = backend.calculate(String(data.query || ""))
-          return calc ? RootSearch.aboutFor(RootSearch.calculatorCandidate(calc), nowMs) : []
+        if (RootSearch.calculatorIndex(rowId) >= 0) {
+          var calc = RootSearch.calculationAt(backend.calculate(String(data.query || "")), RootSearch.calculatorIndex(rowId))
+          return calc ? RootSearch.aboutFor(RootSearch.calculatorCandidate(calc, 0), nowMs) : []
         }
         if (rowId.indexOf("calculator-history:") === 0) {
           var entry = backend.historyEntry(rowId)
@@ -1317,8 +1317,8 @@ Item {
         }
         if (url) return { push: backend.quicklinkForm("Create Quicklink", Quicklinks.suggestion(data.query)) }
         // The calculator row is the query itself, evaluated again.
-        if (data && data.id === RootSearch.CALCULATOR_ID) {
-          var calc = backend.calculate(String(data.query || ""))
+        if (data && RootSearch.calculatorIndex(data.id) >= 0) {
+          var calc = RootSearch.calculationAt(backend.calculate(String(data.query || "")), RootSearch.calculatorIndex(data.id))
           if (!calc) throw new Error("Nothing to calculate")
           return backend.calculatorAction(String(data.action || "open"), { query: calc.input, result: calc.result, copy: calc.copy, kind: calc.kind }, "")
         }

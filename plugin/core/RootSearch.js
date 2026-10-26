@@ -299,9 +299,26 @@ function fallbackRows(query, order, quicklinks) {
 // the query.
 var CALCULATOR_ID = "calculator:result"
 
-function calculatorCandidate(calc) {
+// A query with several targets ("100 usd to eur and gbp") has one answer per
+// target: calc.alternatives after the first, rows "calculator:result:<n>".
+function calculationAt(calc, index) {
+  if (!calc || !index) return calc
+  var alt = (calc.alternatives || [])[index - 1]
+  return alt ? Object.assign({}, calc, alt, { alternatives: [] }) : null
+}
+
+// The answer index of a calculator row id, or -1 for any other row.
+function calculatorIndex(id) {
+  var value = String(id || "")
+  if (value === CALCULATOR_ID) return 0
+  if (value.indexOf(CALCULATOR_ID + ":") !== 0) return -1
+  var n = parseInt(value.slice(CALCULATOR_ID.length + 1), 10)
+  return n > 0 ? n : -1
+}
+
+function calculatorCandidate(calc, index) {
   return {
-    id: CALCULATOR_ID, type: "command", kind: "calculator",
+    id: index ? CALCULATOR_ID + ":" + index : CALCULATOR_ID, type: "command", kind: "calculator",
     title: calc.result, subtitle: calc.input, typeLabel: "Calculator",
     calcKind: calc.kind, calcInput: calc.input, calcResult: calc.result,
     calcInputCaption: calc.inputCaption || "", calcResultCaption: calc.resultCaption || "",
@@ -372,7 +389,12 @@ function rootSections(candidates, query, ctx, deps) {
     var searchable = decorated.filter(function(c) { return c.rootSearch.when !== "empty" })
     var results = deps.Ranker.rank(searchable, q, opts)
     var sections = []
-    if (ctx.calculation && !filtered) sections.push({ id: "calculator", title: "Calculator", rows: [{ candidate: calculatorCandidate(ctx.calculation), record: null }] })
+    if (ctx.calculation && !filtered) {
+      var answers = [{ candidate: calculatorCandidate(ctx.calculation, 0), record: null }]
+      for (var a = 1; a <= (ctx.calculation.alternatives || []).length; a++)
+        answers.push({ candidate: calculatorCandidate(calculationAt(ctx.calculation, a), a), record: null })
+      sections.push({ id: "calculator", title: "Calculator", rows: answers })
+    }
     if (results.length > 0) sections.push({ id: "results", title: "Results", rows: results })
     var url = deps.Quicklinks && !filtered ? deps.Quicklinks.webAddress(q) : ""
     if (url) sections.push({ id: "url", title: "Link", rows: urlRows(url) })
@@ -684,6 +706,8 @@ if (typeof module !== "undefined") {
     menuCandidates: menuCandidates,
     builtinCandidate: builtinCandidate,
     CALCULATOR_ID: CALCULATOR_ID,
+    calculationAt: calculationAt,
+    calculatorIndex: calculatorIndex,
     calculatorCandidate: calculatorCandidate,
     historyCandidate: historyCandidate,
     historySections: historySections,

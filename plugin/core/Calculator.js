@@ -436,6 +436,38 @@ for (var _mc in MORE_CURRENCIES) CURRENCIES[_mc] = MORE_CURRENCIES[_mc]
 var CURRENCY_SYMBOLS = { "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR", "₩": "KRW", "₺": "TRY", "₪": "ILS",
   "₽": "RUB", "₴": "UAH", "₦": "NGN", "₫": "VND", "฿": "THB", "₱": "PHP", "₿": "BTC", "₡": "CRC", "₲": "PYG", "₵": "GHS",
   "₸": "KZT", "₭": "LAK", "₮": "MNT", "₼": "AZN", "₾": "GEL" }
+// Words several currencies share. Your currency wins when it's one of them
+// (a Canadian's "100 dollars" is CAD); otherwise the first. [D]
+var SHARED_CURRENCY_WORDS = {
+  dollar: ["USD", "CAD", "AUD", "NZD", "HKD", "SGD", "TWD", "JMD", "TTD", "BSD", "BBD", "BZD", "FJD", "LRD", "NAD", "SBD", "XCD", "GYD", "SRD", "BMD", "KYD"],
+  buck: ["USD", "CAD", "AUD", "NZD"],
+  peso: ["MXN", "ARS", "CLP", "COP", "PHP", "UYU", "DOP", "CUP"],
+  dinar: ["KWD", "BHD", "JOD", "IQD", "LYD", "TND", "DZD", "RSD", "MKD"],
+  shilling: ["KES", "UGX", "TZS", "SOS"],
+  rial: ["IRR", "OMR", "YER", "SAR", "QAR"],
+  dirham: ["AED", "MAD"],
+  franc: ["CHF", "XOF", "XAF", "XPF", "CDF", "RWF", "BIF", "GNF", "DJF", "KMF"],
+  krona: ["SEK", "ISK"],
+  krone: ["NOK", "DKK"],
+  rupee: ["INR", "PKR", "LKR", "NPR", "MUR", "SCR", "MVR"],
+  manat: ["AZN", "TMT"],
+  kwacha: ["ZMW", "MWK"],
+  som: ["KGS", "UZS"],
+  leu: ["RON", "MDL"],
+  pound: ["GBP", "EGP", "LBP", "SYP", "SDG", "SSP", "FKP", "GIP", "SHP"]
+}
+var SHARED_PLURALS = { dollars: "dollar", bucks: "buck", pesos: "peso", dinars: "dinar", shillings: "shilling", rials: "rial", dirhams: "dirham",
+  francs: "franc", kronor: "krona", kronur: "krona", kroner: "krone", rupees: "rupee", manats: "manat", kwachas: "kwacha", lei: "leu", pounds: "pound" }
+
+function sharedCurrency(word) {
+  var key = SHARED_PLURALS[word] || word
+  var list = SHARED_CURRENCY_WORDS[key]
+  if (!list) return null
+  var home = ENV && ENV.homeCurrency
+  var code = home && list.indexOf(home) >= 0 ? home : list[0]
+  return UNITS[code] && UNITS[code].currency ? UNITS[code] : null
+}
+
 // Dollars with a country prefix: CA$100, A$20, NT$500.
 var PREFIXED_DOLLARS = { "US": "USD", "CA": "CAD", "C": "CAD", "AU": "AUD", "A": "AUD", "NZ": "NZD", "HK": "HKD", "S": "SGD", "NT": "TWD", "R": "BRL", "MX": "MXN" }
 for (var _code in CURRENCIES) {
@@ -715,8 +747,8 @@ function convert(value, unit) {
   if (!value.unit) throw new CalcError("nothing to convert")
   if (value.unit === unit || (value.unit.currency && value.unit.currency === unit.currency)) return num(value.n, unit)
   // Beside money, "pounds" are sterling: "100 dollars in pounds". [D]
-  if (value.unit === UNITS.lb && unit.currency) value = num(value.n, UNITS.GBP)
-  if (value.unit.currency && unit === UNITS.lb) unit = UNITS.GBP
+  if (value.unit === UNITS.lb && unit.currency) value = num(value.n, sharedCurrency("pound"))
+  if (value.unit.currency && unit === UNITS.lb) unit = sharedCurrency("pound")
   if (value.unit === unit || (value.unit.currency && value.unit.currency === unit.currency)) return num(value.n, unit)
   // "16 oz to ml" means fluid ounces. [D]
   if (value.unit === UNITS.oz && dimsKey(unit.dims) === "L3") value = num(value.n, UNITS.floz)
@@ -948,7 +980,8 @@ Parser.prototype.matchUnit = function(afterNumber) {
     var lower = phrase.toLowerCase()
     var unit = null
     if (n === 1) {
-      unit = UNITS[phrase] || UNIT_NAMES[lower] || null
+      // "pound" stays a weight here; convert() makes it money beside money.
+      unit = UNITS[phrase] || (lower !== "pound" && lower !== "pounds" ? sharedCurrency(lower) : null) || UNIT_NAMES[lower] || null
       // Lowercase c/f only read as temperatures right after a number.
       if (!unit && afterNumber && (phrase === "c" || phrase === "f")) unit = UNITS[phrase.toUpperCase()]
       if (!unit && /^[a-z]{3}$/.test(phrase) && UNITS[phrase.toUpperCase()] && UNITS[phrase.toUpperCase()].currency) unit = UNITS[phrase.toUpperCase()]
@@ -1584,8 +1617,55 @@ function feetAndInches(meters) {
   return { display: sign + ft + " ft " + restText + " in", copy: sign + ft + "′" + restText + "″" }
 }
 
+// "1 oz gold", "10 g of silver": troy ounces of XAU/XAG/XPT/XPD. An ounce of a
+// precious metal is a troy ounce. [D]
+var METALS = { gold: "XAU", silver: "XAG", platinum: "XPT", palladium: "XPD" }
+var TROY_OUNCE_G = 31.1034768
+var METAL_WEIGHTS = { g: 1, gram: 1, grams: 1, kg: 1000, kilo: 1000, kilos: 1000, kilogram: 1000, kilograms: 1000,
+  oz: TROY_OUNCE_G, ounce: TROY_OUNCE_G, ounces: TROY_OUNCE_G, "troy oz": TROY_OUNCE_G, "troy ounce": TROY_OUNCE_G, "troy ounces": TROY_OUNCE_G,
+  ozt: TROY_OUNCE_G, lb: 453.59237, lbs: 453.59237, pound: 453.59237, pounds: 453.59237 }
+
+function normalizeMetals(q) {
+  return q.replace(/(\d+(?:\.\d+)?)\s*(troy\s+ounces?|troy\s+oz|ozt|ounces?|oz|grams?|g|kilograms?|kilos?|kg|pounds?|lbs?)\s+(?:of\s+)?(gold|silver|platinum|palladium)\b/gi,
+    function(_, amount, weight, metal) {
+      var grams = Number(amount) * METAL_WEIGHTS[weight.toLowerCase().replace(/\s+/g, " ")]
+      return trimNumber(grams / TROY_OUNCE_G) + " " + METALS[metal.toLowerCase()]
+    })
+}
+
+// "100 usd to eur and gbp", "5 ft in cm, m": the expression, its keyword
+// and 2–6 targets; null for one target (or "in feet and inches").
+var MULTI_TARGET = /^(.*\S)\s+(to|in|into|as)\s+(.+)$/i
+function splitTargets(q) {
+  if (FEET_AND_INCHES.test(q)) return null
+  var m = MULTI_TARGET.exec(q)
+  if (!m) return null
+  var targets = m[3].split(/\s*(?:,|&|\band\b)\s*/i).filter(function(t) { return t })
+  if (targets.length < 2 || targets.length > 6) return null
+  return { expr: m[1], keyword: m[2], targets: targets }
+}
+
+// One answer per target: the first is the result, the rest `alternatives`
+// [{result, copy, resultCaption}]. Every target must work, or none is shown.
 function evaluate(query, env) {
   var q = String(query || "").trim()
+  var multi = splitTargets(q)
+  if (!multi) return evaluateOne(q, env)
+  var answers = []
+  for (var i = 0; i < multi.targets.length; i++) {
+    var a = evaluateOne(multi.expr + " " + multi.keyword + " " + multi.targets[i], env)
+    if (!a) return evaluateOne(q, env)
+    answers.push(a)
+  }
+  var first = answers[0]
+  first.input = q
+  first.alternatives = answers.slice(1).map(function(a) { return { result: a.result, copy: a.copy, resultCaption: a.resultCaption } })
+  return first
+}
+
+function evaluateOne(query, env) {
+  var original = String(query || "").trim()
+  var q = normalizeMetals(original)
   if (!q || q.length > 200) return null
   ENV = env || {}
   try {
@@ -1596,7 +1676,7 @@ function evaluate(query, env) {
     var tz = parseTimeZone(tokens)
     if (tz) {
       var t = presentTime(tz)
-      return { kind: "time", input: q, result: t.display, copy: t.copy, inputCaption: t.inputCaption, resultCaption: t.caption }
+      return { kind: "time", input: original, result: t.display, copy: t.copy, inputCaption: t.inputCaption, resultCaption: t.caption }
     }
     var parser = new Parser(tokens)
     var value = parser.parseStatement()
@@ -1604,7 +1684,7 @@ function evaluate(query, env) {
     if (wantsFeetInches) {
       if (value.type !== "num" || !value.unit || dimsKey(value.unit.dims) !== "L1") return null
       var fi = feetAndInches(toBase(value.n, value.unit))
-      return { kind: "conversion", input: q, result: fi.display, copy: fi.copy, value: value.n,
+      return { kind: "conversion", input: original, result: fi.display, copy: fi.copy, value: value.n,
         inputCaption: titleCase(value.unit.plural), resultCaption: "Feet and Inches" }
     }
     if (state.ops === 0 && value.type === "num" && value.unit && !value.pct && !value.unit.currency && /\d/.test(q)) {
@@ -1643,7 +1723,7 @@ function evaluate(query, env) {
     }
     return {
       kind: kind,
-      input: q,
+      input: original,
       result: shown.display,
       copy: shown.copy,
       value: value.type === "num" ? value.n : value.ms,

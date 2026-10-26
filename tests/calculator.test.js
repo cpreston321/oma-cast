@@ -265,3 +265,41 @@ test("the automatic currency comes from the locale", () => {
   assert.equal(C.localeCurrency("de_DE"), "EUR")
   assert.equal(C.localeCurrency("C"), "")
 })
+
+// ---- fork: several targets, metals, shared currency words
+
+const wide = Object.assign({}, money, {
+  rates: Object.assign({}, money.rates, { rates: Object.assign({}, money.rates.rates, { MXN: 21, ARS: 1715, KWD: 0.343, KES: 144.6, EGP: 55.5, SEK: 11.2, NOK: 11.8, XAU: 0.0002786, XAG: 0.0234 }) })
+})
+const w = (q, extra) => { const r = C.evaluate(q, Object.assign({}, wide, extra || {})); return r && [r.result].concat((r.alternatives || []).map((a) => a.result)) }
+
+test("several targets give one answer each; one bad target shows none", () => {
+  assert.deepEqual(w("100 usd to eur and gbp"), ["€89.29", "£75.00"])
+  assert.deepEqual(w("100 usd in eur, gbp, cad"), ["€89.29", "£75.00", "140.18 CAD"])
+  assert.deepEqual(w("$50 to eur & gbp"), ["€44.64", "£37.50"])
+  assert.deepEqual(w("5 ft to cm and m"), ["152.4 cm", "1.524 m"])
+  assert.deepEqual(w("1 hour in minutes and seconds"), ["60 minutes", "3,600 seconds"])
+  assert.equal(w("100 usd to eur and nope"), null)
+  assert.deepEqual(w("180cm in feet and inches"), ["5 ft 10.87 in"], "still one target")
+  assert.equal(C.evaluate("100 usd to eur and gbp", wide).input, "100 usd to eur and gbp")
+})
+
+test("precious metals by weight are troy ounces of XAU/XAG", () => {
+  assert.deepEqual(w("1 oz gold to usd"), ["$4,020.10"])
+  assert.deepEqual(w("10 g of gold to usd"), ["$1,292.49"])
+  assert.deepEqual(w("1 kg silver to usd"), ["$1,538.84"])
+  assert.deepEqual(w("1 oz gold"), ["$4,020.10"], "a lone amount converts to your currency")
+  assert.equal(C.evaluate("1 oz gold", wide).input, "1 oz gold", "shows what was typed")
+  assert.deepEqual(w("2 oz to g"), ["56.699 g"], "without a metal, ounces are ordinary")
+})
+
+test("shared currency words follow your currency, else the most common", () => {
+  assert.deepEqual(w("100 pesos to usd"), ["$5.33"], "MXN")
+  assert.deepEqual(w("100 pesos to usd", { homeCurrency: "ARS" }), ["$0.07"])
+  assert.deepEqual(w("100 dinars to usd"), ["$326.53"], "KWD")
+  assert.deepEqual(w("1000 shillings to usd"), ["$7.75"], "KES")
+  assert.deepEqual(w("100 dollars to eur", { homeCurrency: "CAD" }), ["€63.69"])
+  assert.deepEqual(w("100 kroner to usd"), ["$9.49"], "NOK")
+  assert.deepEqual(w("100 pounds to dollars", { homeCurrency: "EGP" }), ["$2.02"])
+  assert.deepEqual(w("150 pounds to kg"), ["68.0389 kg"], "a weight without money")
+})

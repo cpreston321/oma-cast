@@ -213,7 +213,7 @@ SettingsPage {
         font.pixelSize: Style.font.body
         onTextChanged: checkTimer.restart()
         background: Rectangle {
-          radius: Math.max(Style.cornerRadius, Style.space(5))
+          radius: Style.cornerRadius
           color: Util.alpha(page.look.foreground, 0.04)
           border.width: 1
           border.color: textArea.activeFocus ? page.look.accent : Util.alpha(page.look.foreground, 0.15)

@@ -20,7 +20,7 @@ Item {
 
   Rectangle {
     anchors.fill: parent
-    radius: Math.max(Style.cornerRadius, Style.space(6))
+    radius: Style.cornerRadius
     color: Util.alpha(library.look.foreground, 0.03)
     border.width: 1
     border.color: Util.alpha(library.look.foreground, 0.08)
@@ -43,7 +43,7 @@ Item {
       required property var modelData
       width: list.width
       height: Style.space(44)
-      radius: Math.max(Style.cornerRadius, Style.space(5))
+      radius: Style.cornerRadius
       color: entry.modelData.id === library.selectedId ? Util.alpha(library.look.accent, 0.18)
         : (mouse.containsMouse ? Util.alpha(library.look.foreground, 0.05) : "transparent")
 

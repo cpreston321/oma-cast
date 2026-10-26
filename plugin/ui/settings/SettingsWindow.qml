@@ -136,7 +136,7 @@ FloatingWindow {
           required property int index
           width: parent.width
           height: Style.space(36)
-          radius: Math.max(Style.cornerRadius, Style.space(6))
+          radius: Style.cornerRadius
           color: win.tab === tabRow.modelData.id ? Util.alpha(win.look.accent, 0.18)
             : (tabMouse.containsMouse ? Util.alpha(win.look.foreground, 0.05) : "transparent")
 

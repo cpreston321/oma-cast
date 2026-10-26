@@ -39,7 +39,7 @@ Rectangle {
   }
 
   color: Util.alpha(look.foreground, 0.03)
-  radius: Math.max(Style.cornerRadius, px(6))
+  radius: Style.cornerRadius
   border.width: 1
   border.color: Util.alpha(look.foreground, 0.08)
   clip: true
@@ -145,7 +145,7 @@ Rectangle {
                 id: monitor
                 width: parent.width
                 height: Math.round(width / screen.modelData.aspect)
-                radius: Math.max(Style.cornerRadius, pane.px(4))
+                radius: Style.cornerRadius
                 color: Qt.darker(pane.look.background, 1.45)
                 border.width: 1
                 border.color: Util.alpha(pane.look.foreground, 0.22)
@@ -170,7 +170,7 @@ Rectangle {
                     y: tile.modelData.y * monitor.height + tile.gap
                     width: Math.max(2, tile.modelData.w * monitor.width - tile.gap * 2)
                     height: Math.max(2, tile.modelData.h * monitor.height - tile.gap * 2)
-                    radius: Math.max(Style.cornerRadius, pane.px(4))
+                    radius: Style.cornerRadius
                     color: Util.alpha(pane.look.foreground, 0.10)
                     border.width: 1
                     border.color: Util.alpha(pane.look.foreground, 0.30)

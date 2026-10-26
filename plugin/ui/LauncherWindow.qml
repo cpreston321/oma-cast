@@ -1393,7 +1393,7 @@ PanelWindow {
                 required property int index
                 width: emojiList.cellSize
                 height: emojiList.cellSize
-                radius: Math.max(Style.cornerRadius, window.px(8))
+                radius: Style.cornerRadius
                 color: window.emojiRow === gridRow.index && window.emojiCol === cell.index ? window.look.selectedBackground : "transparent"
 
                 Text {

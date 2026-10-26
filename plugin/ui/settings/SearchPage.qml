@@ -205,7 +205,7 @@ SettingsPage {
       height: Style.space(48)
       visible: page.addable.length > 0
 
-      SearchableDropdown {
+      SearchSelect {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         width: Style.space(300)

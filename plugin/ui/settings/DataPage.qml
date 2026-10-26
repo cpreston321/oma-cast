@@ -90,7 +90,7 @@ SettingsPage {
       look: page.look
       label: "Log level"
       description: "How much oma-cast writes to the shell log (qs log -p $OMARCHY_PATH/shell)."
-      Dropdown {
+      Select {
         width: Style.space(160)
         showLabel: false
         options: ["trace", "debug", "info", "warning", "error"]

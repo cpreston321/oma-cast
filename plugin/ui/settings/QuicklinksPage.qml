@@ -144,7 +144,7 @@ SettingsPage {
       }
       Item { width: 1; height: Style.space(4) }
       FieldLabel { look: page.look; text: "Open with" }
-      SearchableDropdown {
+      SearchSelect {
         width: Math.min(parent.width, Style.space(320))
         showLabel: false
         placeholderText: "Search apps…"

@@ -80,7 +80,7 @@ SettingsPage {
       look: page.look
       label: "Your currency"
       description: "An amount on its own (“€50”, “100 cad”) converts to this. Automatic follows your locale (" + (page.currencies.locale || "") + ")."
-      SearchableDropdown {
+      SearchSelect {
         width: Style.space(280)
         showLabel: false
         placeholderText: "Search currencies…"
@@ -93,7 +93,7 @@ SettingsPage {
       look: page.look
       label: "Second currency"
       description: "An amount already in your currency (“$100”) converts to this."
-      SearchableDropdown {
+      SearchSelect {
         width: Style.space(280)
         showLabel: false
         placeholderText: "Search currencies…"
@@ -202,7 +202,7 @@ SettingsPage {
           look: page.look
           label: conversion.modelData.name + " (" + conversion.modelData.from + ")"
           description: conversion.modelData.changed ? "Default: " + page.labelFor(conversion.modelData, conversion.modelData.defaultTarget) : ""
-          Dropdown {
+          Select {
             width: Style.space(260)
             showLabel: false
             options: [{ value: "none", label: "Don't convert" }].concat(conversion.modelData.choices)

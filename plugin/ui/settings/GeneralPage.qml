@@ -118,7 +118,7 @@ SettingsPage {
       look: page.look
       label: "Escape key"
       description: "What Esc does once the search field is empty."
-      Dropdown {
+      Select {
         width: Style.space(240)
         showLabel: false
         options: [{ value: "pop-back-or-close", label: "Go back, then close" }, { value: "close-and-pop-to-root", label: "Close and return to root" }]

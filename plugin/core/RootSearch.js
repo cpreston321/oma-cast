@@ -86,7 +86,16 @@ var BUILTINS = [
   // the text gets a real multi-line editor.
   { id: "builtin:search-snippets", title: "Search Snippets", subtitle: "Snippets", keywords: ["snippet", "text", "template", "paste"], glyph: "\uf121", run: { push: { kind: "snippets", title: "Search Snippets" } } },
   { id: "builtin:create-snippet", title: "Create Snippet", subtitle: "Snippets", keywords: ["snippet", "text", "template", "new"], glyph: "\uf121", run: { settings: { tab: "snippets", snippetId: "new" } } },
-  { id: "builtin:settings", title: "oma-cast Settings", subtitle: "oma-cast", keywords: ["settings", "preferences", "config", "aliases", "options"], glyph: "\uf013", run: { settings: { tab: "general" } }, rootSearch: { when: "always" } }
+  { id: "builtin:settings", title: "oma-cast Settings", subtitle: "oma-cast", keywords: ["settings", "preferences", "config", "aliases", "options"], glyph: "\uf013", run: { settings: { tab: "general" } }, rootSearch: { when: "always" } },
+  {
+    id: "builtin:search-files",
+    title: "Search Files",
+    subtitle: "Find files and folders in your home folder",
+    keywords: ["files", "folders", "find", "spotlight", "arquivos", "pastas"],
+    glyph: "\uf002",                 // Nerd Font magnifier, drawn in the menu font
+    run: { push: { kind: "files", title: "Search Files" } },
+    rootSearch: { when: "always" }
+  }
 ]
 
 function words(value) {
@@ -334,6 +343,10 @@ function passesFilter(candidate, filter) {
   return (candidate.type === "application") === (filter === "applications")
 }
 
+// Sections for the root view (SPEC §7.2):
+//   empty query: Favorites, Suggestions, Commands, Applications
+//   query:       Results, Link (a typed web address), Files [D], Use "<q>" with…
+// ctx.files holds the file rows for the query (core/FileSearch.js), already ranked.
 function rootSections(candidates, query, ctx, deps) {
   var q = String(query || "").trim()
   var filtered = ctx.filter && ctx.filter !== "all"
@@ -352,6 +365,8 @@ function rootSections(candidates, query, ctx, deps) {
     if (results.length > 0) sections.push({ id: "results", title: "Results", rows: results })
     var url = deps.Quicklinks && !filtered ? deps.Quicklinks.webAddress(q) : ""
     if (url) sections.push({ id: "url", title: "Link", rows: urlRows(url) })
+    var files = filtered ? [] : (ctx.files || [])
+    if (files.length > 0) sections.push({ id: "files", title: "Files", rows: files.map(function(c) { return { candidate: c, record: null } }) })
     if (!filtered) sections.push({ id: "fallback-commands", title: "Use “" + q + "” with…", rows: fallbackRows(q) })
     return sections
   }
@@ -432,6 +447,7 @@ function snippetSections(candidates, query, ctx, deps) {
 }
 
 function actionsFor(candidate) {
+  if (candidate.kind === "file" || candidate.kind === "folder") return fileActions(candidate)
   if (candidate.kind === "emoji") {
     return [
       { id: "paste", title: "Paste Emoji", shortcut: "↵", section: "primary", icon: "" },
@@ -514,6 +530,19 @@ function actionsFor(candidate) {
   return list
 }
 
+// Files and folders [D]: no favourites, aliases or disabling, since a row
+// lives only as long as the query that found it.
+function fileActions(candidate) {
+  var folder = candidate.kind === "folder"
+  return [
+    { id: "open", title: folder ? "Open Folder" : "Open File", shortcut: "↵", section: "primary", icon: "" },
+    { id: "reveal", title: "Show in Files", shortcut: "Ctrl ↵", section: "primary", icon: "" },
+    { id: "open-terminal", title: folder ? "Open in Terminal" : "Open Folder in Terminal", shortcut: "Ctrl Shift ↵", section: "primary", icon: "" },
+    { id: "copy-path", title: "Copy Path", shortcut: "Ctrl Shift C", section: "copy", icon: "" }
+  ]
+}
+
+// Favourite ordering: returns the new {id: order} map for an action.
 function reorderFavorites(commands, id, action) {
   var favs = []
   for (var key in commands) if (typeof commands[key].favoriteOrder === "number") favs.push({ id: key, order: commands[key].favoriteOrder })
@@ -627,6 +656,7 @@ if (typeof module !== "undefined") {
     quicklinkSections: quicklinkSections,
     snippetSections: snippetSections,
     actionsFor: actionsFor,
+    fileActions: fileActions,
     reorderFavorites: reorderFavorites,
     fallbackUrl: fallbackUrl
   }

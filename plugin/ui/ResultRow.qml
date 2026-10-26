@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import "../core/FileSearch.js" as FileSearch
 
 Item {
   id: row
@@ -23,6 +24,7 @@ Item {
   required property string calcResult
   required property string calcInputCaption
   required property string calcResultCaption
+  required property string path         // file rows only; makes the row draggable
 
   property bool selected: false
   property var look: null
@@ -31,6 +33,8 @@ Item {
 
   signal hovered(int index, var item, var mouse)
   signal clicked(int index)
+  signal dragStarted(int index)
+  signal dragEnded(bool dropped)
 
   readonly property bool isSection: row.rowKind === "section"
   readonly property bool isCalculator: row.rowKind === "calculator"
@@ -281,12 +285,33 @@ Item {
     }
   }
 
+  // Drag a file row out to another app (terminal, browser upload, chat)
+  // as text/uri-list, the same payload a file manager sends. [D]
+  Item {
+    id: dragProxy
+    width: 1
+    height: 1
+    Drag.dragType: Drag.Automatic
+    Drag.supportedActions: Qt.CopyAction
+    Drag.mimeData: row.path ? ({ "text/uri-list": FileSearch.fileUri(row.path) + "\r\n", "text/plain": row.path }) : ({})
+    Drag.active: rowMouse.drag.active
+    Drag.onDragStarted: row.dragStarted(row.index)
+    Drag.onDragFinished: function(dropAction) {
+      dragProxy.x = 0
+      dragProxy.y = 0
+      row.dragEnded(dropAction !== Qt.IgnoreAction)
+    }
+  }
+
   MouseArea {
+    id: rowMouse
     anchors.fill: parent
     enabled: !row.isSection
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
-    onPositionChanged: function(mouse) { row.hovered(row.index, row, mouse) }
+    drag.target: row.path ? dragProxy : null
+    drag.threshold: row.px(8)
+    onPositionChanged: function(mouse) { if (!drag.active) row.hovered(row.index, row, mouse) }
     onClicked: row.clicked(row.index)
   }
 }

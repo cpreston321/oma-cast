@@ -18,6 +18,7 @@ import "core/Emoji.js" as Emoji
 import "core/Clipboard.js" as Clipboard
 import "core/ScriptMenu.js" as ScriptMenu
 import "core/Keybindings.js" as Keybindings
+import "core/FileSearch.js" as FileSearch
 import "services"
 
 Item {
@@ -42,7 +43,7 @@ Item {
   property var candidatesById: ({})
   property int candidatesRevision: 0
   readonly property bool loading: menuSource.loading || agentLauncher.checking || scriptRunner.running
-    || (keybindingsSource.loading && !keybindingsSource.rows.length)
+    || (keybindingsSource.loading && !keybindingsSource.rows.length) || fileSource.loading
   // plugin/ on disk, for the scripts bundled with it (ScriptMenu.SOURCES).
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
   // Bumped when a pushed view's data changes (clipboard, emoji usage, script
@@ -842,6 +843,30 @@ Item {
     return { ok: r.added > 0 || r.failed.length === 0, title: parts.join(" · "), added: r.added, duplicates: r.duplicates, withoutApp: r.withoutApp, failed: r.failed }
   }
 
+  // A file or folder row (core/FileSearch.js); see RootSearch.fileActions.
+  function performFileAction(candidate, action) {
+    var path = candidate.path
+    var folder = candidate.kind === "folder" ? path : path.slice(0, path.lastIndexOf("/")) || "/"
+    switch (action) {
+      case "open":
+        Util.execArgv(["uwsm-app", "--", "xdg-open", path])
+        return { close: true }
+      case "reveal":
+        // FileManager1 selects the item in Nautilus (or whichever file manager owns the name).
+        Util.execArgv(["gdbus", "call", "--session", "--dest", "org.freedesktop.FileManager1",
+          "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1.ShowItems",
+          "['" + FileSearch.fileUri(path).replace(/'/g, "%27") + "']", ""])
+        return { close: true }
+      case "open-terminal":
+        Util.execArgv(["uwsm-app", "--", "xdg-terminal-exec", "--dir=" + folder])
+        return { close: true }
+      case "copy-path":
+        Util.execArgv(["wl-copy", "--", path])
+        return { close: true, hud: "Copied Path" }
+    }
+    throw new Error("Unknown action " + action)
+  }
+
   // ------------------------------------------------------------- services
 
   function registerServices() {
@@ -934,6 +959,12 @@ Item {
             rows: matches }]
         }
         var ctx = backend.searchContext()
+        // Search Files (FileSearch.js): fd results for the query, up to VIEW_LIMIT.
+        if (view && view.kind === "files") {
+          fileSource.request(query)
+          var found = fileSource.rowsFor(query, FileSearch.VIEW_LIMIT)
+          return found.length ? [{ id: "files", title: "", rows: found }] : []
+        }
         var sections
         if (view && view.kind === "menu") sections = RootSearch.submenuSections(backend.candidates, view.menuId, query, ctx, backend.deps)
         else if (view && view.kind === "quicklinks") sections = RootSearch.quicklinkSections(backend.candidates, query, ctx, backend.deps)
@@ -948,6 +979,12 @@ Item {
         else {
           ctx.filter = String(data && data.filter || "all")
           if (query.trim() && ctx.filter === "all") ctx.calculation = backend.calculate(query)
+          // A few file rows under Results; asynchronous, so they join on a
+          // later rebuild (fileSource bumps candidatesRevision).
+          if (ctx.filter === "all") {
+            fileSource.request(query)
+            ctx.files = fileSource.rowsFor(query, FileSearch.ROOT_LIMIT)
+          }
           sections = RootSearch.rootSections(backend.candidates, query, ctx, backend.deps)
         }
         return sections.map(function(s) {
@@ -956,6 +993,8 @@ Item {
       },
       getActions: function(data) {
         var rowId = String(data && data.id || "")
+        var file = fileSource.lookup(rowId)
+        if (file) return RootSearch.actionsFor(file)
         if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
         if (rowId.indexOf("emoji:") === 0) return RootSearch.actionsFor({ kind: "emoji" })
@@ -1012,6 +1051,8 @@ Item {
           Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(fallback, data.query)])
           return { close: true }
         }
+        var file = fileSource.lookup(String(data && data.id || ""))
+        if (file) return backend.performFileAction(file, String(data.action || "open"))
         // So are the rows for a typed web address.
         var url = data && (data.id === "url:open" || data.id === "url:create") ? Quicklinks.webAddress(data.query) : ""
         if (url && data.id === "url:open") {
@@ -1256,6 +1297,12 @@ Item {
   KeybindingsSource {
     id: keybindingsSource
     onRevisionChanged: rebuildTimer.restart()
+  }
+
+  FileSearchSource {
+    id: fileSource
+    onRevisionChanged: backend.candidatesRevision++
+    onMessage: function(level, text, metadata) { backend.log(level, "files", text, metadata) }
   }
 
   JsonStore {

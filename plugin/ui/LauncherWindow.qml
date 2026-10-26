@@ -25,7 +25,10 @@ PanelWindow {
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.namespace: "oma-cast"
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+  // Hyprland keeps pointer focus on a layer with exclusive keyboard focus,
+  // so a dragged file's drop would never reach the window underneath; let
+  // go while dragging (#4).
+  WlrLayershell.keyboardFocus: window.draggingOut ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
 
   // Hyprland fades layer surfaces in and out, and keeps drawing one for about
   // 150 ms after it unmaps, so a screenshot started from the launcher (Omasnap,
@@ -75,6 +78,12 @@ PanelWindow {
   property var actions: []
   property var toast: null
   property int historyIndex: -1
+  // A file row is being dragged out: hide the card and let the pointer pass
+  // through the fullscreen surface, so the app underneath receives the drop.
+  property bool draggingOut: false
+
+  mask: window.draggingOut ? passThrough : null
+  Region { id: passThrough }
 
   // Ctrl+P root filter (RootSearch.FILTERS), Ctrl+T toast actions,
   // Ctrl+Shift+K About panel and the confirm alert.
@@ -142,9 +151,10 @@ PanelWindow {
     if (kind === "snippets") return "Search snippets…"
     if (kind === "menu" || kind === "script-menu") return "Search " + window.view.title + "…"
     if (kind === "calculator-history") return "Search calculations…"
+    if (kind === "files") return "Search files and folders…"
     if (kind === "emoji") return "Search emoji…"
     if (kind === "clipboard-history") return "Search clipboard history…"
-    return "Search for apps and commands…"
+    return "Search for apps, commands and files…"
   }
 
   // Card size in px at uiZoom 1; zoom scales it with the text, and it never
@@ -172,6 +182,7 @@ PanelWindow {
 
   function prepare(payload) {
     popTimer.stop()
+    window.draggingOut = false
     if (typeof payload.query === "string") window.query = payload.query
     window.closePopups()
     window.historyIndex = -1
@@ -187,6 +198,9 @@ PanelWindow {
   onQueryInputActiveChanged: window.focusInput()
 
   onShownChanged: {
+    // A drag whose row was destroyed mid-flight never reports its end; never
+    // let that leave the next open invisible and click-through.
+    window.draggingOut = false
     if (window.shown) return
     Qt.inputMethod.reset()
     window.closePopups()
@@ -230,7 +244,10 @@ PanelWindow {
 
   function rebuild(resetSelection) {
     pointerGate.reset()
-    var keepId = !resetSelection && window.selectedRow ? window.selectedRow.itemId : ""
+    // A selection still on the top row follows the top row, so rows that
+    // arrive late (file search) take the top instead of pushing it down.
+    var onTop = window.selectedIndex >= 0 && window.selectedIndex === window.nextSelectable(-1, 1)
+    var keepId = !resetSelection && !onTop && window.selectedRow ? window.selectedRow.itemId : ""
     rows.clear()
     window.rowsHaveDetail = false
     window.emojiRows = []
@@ -276,7 +293,8 @@ PanelWindow {
       calcResult: String(c.calcResult || ""),
       calcInputCaption: String(c.calcInputCaption || ""),
       calcResultCaption: String(c.calcResultCaption || ""),
-      argsJson: JSON.stringify(c.arguments || [])
+      argsJson: JSON.stringify(c.arguments || []),
+      path: String(c.path || "")
     }
   }
 
@@ -973,7 +991,7 @@ PanelWindow {
       if (key === Qt.Key_PageUp) { window.move(-8); return true }
       if (key === Qt.Key_PageDown) { window.move(8); return true }
       if (ctrl && shift && key === Qt.Key_F) { window.performIfOffered(["favorite-add", "favorite-remove"]); return true }
-      if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer", "copy-link", "copy-shortcut"]); return true }
+      if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer", "copy-link", "copy-shortcut", "copy-path"]); return true }
       if (ctrl && shift && key === Qt.Key_D) { window.performIfOffered(["delete-all-entries"]); return true }
       if (ctrl && key === Qt.Key_D) { window.performIfOffered(["delete-entry", "delete-quicklink", "delete-snippet"]); return true }
       if (ctrl && !shift && key === Qt.Key_E && window.performIfOffered(["edit-quicklink", "edit-snippet"])) return true
@@ -1039,6 +1057,7 @@ PanelWindow {
     color: window.look.background
     borderSpec: window.borderSpec
     clip: true
+    opacity: window.draggingOut ? 0 : 1
 
     MouseArea { anchors.fill: parent; onClicked: { window.closePopups(); window.argFocus = -1; window.focusInput() } }
 
@@ -1336,6 +1355,12 @@ PanelWindow {
             if (window.pickingApp) { window.select(i); window.chooseOpenWith() }
             else window.perform("open", i)
           }
+          onDragStarted: function(i) { window.select(i); window.actionPanelOpen = false; window.draggingOut = true }
+          // A drop somewhere else is done with the launcher; a cancelled drag brings it back.
+          onDragEnded: function(dropped) {
+            window.draggingOut = false
+            if (dropped) window.dismissRequested()
+          }
         }
       }
 
@@ -1474,6 +1499,7 @@ PanelWindow {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
           text: window.editor ? window.view.title
+            : window.view.kind === "files" ? (!window.backend.ready ? "Loading…" : (window.query.trim().length < 2 ? "Search your home folder" : (window.backend.loading ? "Searching…" : "No files found")))
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
             : window.view.kind === "quicklinks" && !window.query ? "No Quicklinks Yet"
             : window.view.kind === "snippets" && !window.query ? "No Snippets Yet"

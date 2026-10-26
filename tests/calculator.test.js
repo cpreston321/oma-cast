@@ -35,7 +35,8 @@ test("arithmetic, precedence, functions and constants", () => {
 })
 
 test("anything that is not a calculation yields no row", () => {
-  for (const q of ["", "firefox", "42", "-5", "5 kg", "e", "1password", "7zip", "now", "time", "may", "20%", "to do", "kg", "x"]) {
+  // A lone amount and unit ("5 kg") converts to its counterpart (fork); see below.
+  for (const q of ["", "firefox", "42", "-5", "e", "1password", "7zip", "now", "time", "may", "20%", "to do", "kg", "x", "1st", "kilogram", "4k", "2fa", "3d"]) {
     assert.equal(C.evaluate(q, env), null, q)
   }
 })
@@ -118,7 +119,8 @@ test("captions and copy text", () => {
 })
 
 test("mixed units add up", () => {
-  assert.equal(result("5 ft 3 in"), "5.25 ft")
+  assert.equal(result("5 ft 3 in"), "160.02 cm", "a lone height converts to cm (fork)")
+  assert.equal(result("5 ft 3 in + 0 in"), "5.25 ft")
   assert.equal(result("5 ft 3 in to cm"), "160.02 cm")
   assert.equal(result("1 m 50 cm"), "1.5 m")
   assert.equal(result("1 h 30 min + 45 min"), "2.25 hours")
@@ -175,4 +177,45 @@ test("root search puts the Calculator section first; ↵ copies, Ctrl ↵ pastes
   assert.deepEqual(actions.slice(0, 2), ["copy-answer", "paste-answer"])
   const calcHistory = RS.rootSections(RS.BUILTINS.map(RS.builtinCandidate), "calc hist", { commands: {}, frecency: {}, nowMs: NOW }, deps)
   assert.equal(calcHistory[0].rows[0].candidate.title, "Calculator History")
+})
+
+// ---- fork: everyday conversions
+
+test("a lone amount and unit converts to its counterpart", () => {
+  for (const [q, want] of [
+    ["16rem", "256 px"], ["1.5rem", "24 px"], ["24px", "1.5 rem"], ["5 kg", "11.0231 lb"], ["150 lbs", "68.0389 kg"],
+    ["100 f", "37.7778 °C"], ["37c", "98.6 °F"], ["300 k", "26.85 °C"], ["10 km", "6.2137 mi"], ["1 in", "2.54 cm"],
+    ["2 l", "0.5283 gal"], ["500 GB", "465.6613 GiB"], ["30 psi", "2.0684 bar"], ["180°", "3.1416 rad"]
+  ]) assert.equal(result(q), want, q)
+})
+
+test("heights: feet and inch marks, 5ft10, and a feet-and-inches target", () => {
+  for (const q of [`5'10"`, "5′10″", "5ft10", "5 ft 10", "5 ft 10 in"]) assert.equal(result(q), "177.8 cm", q)
+  assert.equal(result(`5'10" to m`), "1.778 m")
+  assert.equal(result("180cm in feet and inches"), "5 ft 10.87 in")
+  assert.equal(C.evaluate("180cm in feet and inches", env).copy, "5′10.87″")
+  assert.equal(result("2 meters in ft and in"), "6 ft 6.74 in")
+  assert.equal(result("5 kg in feet and inches"), null, "only lengths")
+})
+
+test("lowercase symbols people type, and bytes for lowercase data sizes", () => {
+  for (const [q, want] of [
+    ["0 c in k", "273.15 K"], ["1 kwh to joules", "3,600,000 J"], ["100 w to hp", "0.1341 hp"], ["1 hp to kw", "0.7457 kW"],
+    ["1 atm to pa", "101,325 Pa"], ["1000 kcal to kj", "4,184 kJ"], ["1 cal to j", "4.184 J"], ["2.4 ghz to mhz", "2,400 MHz"],
+    ["1 kb to bytes", "1,000 B"], ["1 gb to mb", "1,000 MB"], ["1 gbps to mbps", "1,000 Mbps"], ["8 Mb to kB", "1,000 kB"]
+  ]) assert.equal(result(q), want, q)
+})
+
+test("ounces to a volume are fluid ounces; CSS absolute lengths are 96 px per inch", () => {
+  assert.equal(result("16 oz to ml"), "473.1765 mL")
+  assert.equal(result("1in to px"), "96 px")
+  assert.equal(result("96px to in"), "1 in")
+  assert.equal(result("2.54 cm to px"), "96 px")
+  assert.equal(result("12pt to mm"), "4.2333 mm")
+})
+
+test("scientific notation shows its value; other bare numbers don't", () => {
+  assert.equal(result("1e6"), "1,000,000")
+  assert.equal(result("2.5e-3"), "0.0025")
+  assert.equal(C.evaluate("1000000", env), null)
 })

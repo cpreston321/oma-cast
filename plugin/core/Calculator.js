@@ -299,6 +299,50 @@ for (var _code in CURRENCIES) {
 // Words that read as units only right after a number ("5 in", "3 d").
 var NUMBER_ONLY_UNITS = { "in": true, "d": true, "t": true, "y": true, "s": true, "h": true, "m": true, "g": true, "b": true, "B": true, "C": true, "F": true, "K": true, "A": true, "V": true, "N": true, "J": true, "W": true, "L": true, "l": true, "cup": true, "st": true, "ct": true, "pt": true, "em": true, "mo": true, "kn": true, "kt": true, "ac": true, "ha": true, "bar": true }
 
+// Everyday lowercase spellings of case-sensitive symbols (fork). Data sizes
+// typed in lowercase mean bytes, as people use them ("a 4 gb file"); Mb, Gb
+// and *bps stay bits. Single letters only count right after a number.
+function alias(word, unit, numberOnly) {
+  if (!unit) return
+  UNITS[word] = unit
+  if (numberOnly) NUMBER_ONLY_UNITS[word] = true
+}
+alias("k", UNITS.K, true)
+alias("kwh", UNITS.kWh); alias("gwh", UNITS.GWh); alias("wh", UNITS.Wh)
+alias("w", UNITS.W, true); alias("kw", UNITS.kW); alias("gw", UNITS.GW)
+alias("j", UNITS.J, true); alias("kj", UNITS.kJ); alias("mj", UNITS.MJ)
+alias("pa", UNITS.Pa, true); alias("kpa", UNITS.kPa); alias("hpa", UNITS.hPa); alias("mpa", UNITS.MPa); alias("mmhg", UNITS.mmHg)
+alias("hz", UNITS.Hz); alias("khz", UNITS.kHz); alias("mhz", UNITS.MHz); alias("ghz", UNITS.GHz)
+alias("v", UNITS.V, true); alias("kv", UNITS.kV); alias("ev", UNITS.eV)
+alias("kb", UNITS.kB); alias("mb", UNITS.MB); alias("gb", UNITS.GB); alias("tb", UNITS.TB); alias("pb", UNITS.PB)
+alias("mbps", UNITS.Mbps); alias("gbps", UNITS.Gbps); alias("tbps", UNITS.Tbps)
+// Feet and inches marks: 5'10", 5′10″.
+alias("′", UNITS.ft, true); alias("″", UNITS["in"], true)
+
+// A lone amount and unit ("16rem", "5 kg", "100 f") converts to its obvious
+// counterpart, as omalaunch did. A bare number or word never does. [D]
+var COUNTERPARTS = [
+  ["rem", "px"], ["em", "px"], ["px", "rem"], ["pt", "px"],
+  ["in", "cm"], ["cm", "in"], ["mm", "in"], ["m", "ft"], ["km", "mi"], ["mi", "km"], ["ft", "cm"], ["yd", "m"], ["nmi", "km"],
+  // Not stone: "1st" is an ordinal far more often than a weight.
+  ["lb", "kg"], ["kg", "lb"], ["oz", "g"], ["g", "oz"], ["t", "lb"],
+  ["L", "gal"], ["gal", "L"], ["mL", "floz"], ["floz", "mL"], ["cup", "mL"], ["tsp", "mL"], ["tbsp", "mL"], ["qt", "L"],
+  ["°C", "°F"], ["°F", "°C"], ["K", "°C"],
+  ["mph", "km/h"], ["km/h", "mph"], ["kn", "km/h"], ["m/s", "km/h"],
+  ["m²", "ft²"], ["ft²", "m²"], ["km²", "mi²"], ["mi²", "km²"], ["ac", "ha"], ["ha", "ac"],
+  ["hp", "kW"], ["kW", "hp"], ["kcal", "kJ"], ["kJ", "kcal"], ["kWh", "MJ"],
+  ["psi", "bar"], ["bar", "psi"], ["atm", "kPa"], ["kPa", "psi"],
+  ["°", "rad"], ["rad", "°"],
+  ["GB", "GiB"], ["GiB", "GB"], ["TB", "TiB"], ["TiB", "TB"], ["MB", "MiB"], ["MiB", "MB"]
+]
+var NAMED_COUNTERPARTS = [["pints", "mL"], ["tons", "kg"]]
+
+function counterpart(unit) {
+  for (var i = 0; i < COUNTERPARTS.length; i++) if (UNITS[COUNTERPARTS[i][0]] === unit) return UNITS[COUNTERPARTS[i][1]] || null
+  for (var j = 0; j < NAMED_COUNTERPARTS.length; j++) if (UNIT_NAMES[NAMED_COUNTERPARTS[j][0]] === unit) return UNITS[NAMED_COUNTERPARTS[j][1]] || null
+  return null
+}
+
 // ------------------------------------------------------------- vocabulary
 
 var CONSTANTS = { pi: Math.PI, "π": Math.PI, tau: 2 * Math.PI, "τ": 2 * Math.PI, e: Math.E, phi: (1 + Math.sqrt(5)) / 2, "φ": (1 + Math.sqrt(5)) / 2 }
@@ -449,6 +493,10 @@ function lex(input) {
       i += len; continue
     }
     if (CURRENCY_SYMBOLS[ch]) { tokens.push({ t: "cur", v: CURRENCY_SYMBOLS[ch] }); i++; continue }
+    // 5'10": feet and inch marks after a number.
+    if ((ch === "'" || ch === "′" || ch === "\"" || ch === "″") && tokens.length && tokens[tokens.length - 1].t === "num") {
+      tokens.push({ t: "id", v: ch === "'" || ch === "′" ? "'" : "\"" }); i++; continue
+    }
     if ((m = /^°\s*([CF])(?![a-zA-Z])/.exec(rest))) { tokens.push({ t: "id", v: "°" + m[1] }); i += m[0].length; continue }
     if (ch === "°") { tokens.push({ t: "id", v: "°" }); i++; continue }
     if (rest.indexOf("**") === 0) { tokens.push({ t: "op", v: "^" }); i += 2; continue }
@@ -505,9 +553,17 @@ function unitFactor(unit) {
 function toBase(n, unit) { return (n + unit.offset) * unitFactor(unit) }
 function fromBase(n, unit) { return n / unitFactor(unit) - unit.offset }
 
+var CSS_PX_PER_M = 96 / 0.0254    // CSS: 1in = 96px
+
 function convert(value, unit) {
   if (!value.unit) throw new CalcError("nothing to convert")
   if (value.unit === unit || (value.unit.currency && value.unit.currency === unit.currency)) return num(value.n, unit)
+  // "16 oz to ml" means fluid ounces. [D]
+  if (value.unit === UNITS.oz && dimsKey(unit.dims) === "L3") value = num(value.n, UNITS.floz)
+  // CSS absolute lengths: in, cm, mm ↔ px, pt, rem at 96 px per inch.
+  var from = dimsKey(value.unit.dims), to = dimsKey(unit.dims)
+  if (from === "L1" && to === "P1") return num(fromBase(toBase(value.n, value.unit) * CSS_PX_PER_M, unit), unit)
+  if (from === "P1" && to === "L1") return num(fromBase(toBase(value.n, value.unit) / CSS_PX_PER_M, unit), unit)
   if (!sameDims(value.unit.dims, unit.dims)) throw new CalcError("incompatible units")
   if (unit.dims.C && !(ENV && ENV.rates && ENV.rates.rates)) throw new CalcError("no exchange rates")
   return num(fromBase(toBase(value.n, value.unit), unit), unit)
@@ -1330,12 +1386,34 @@ function numberWords(n) {
 
 var KIND_CAPTIONS = { math: "Expression", percentage: "Percentage", date: "Date", base: "Number", unix: "Date" }
 
+// "5ft10" and "5' 10" are feet and inches; on their own, a height wanted in cm.
+function normalizeHeights(q) {
+  var lone = /^(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|'|′)\s*(\d+(?:\.\d+)?)\s*(?:in|inch|inches|"|″)?$/i.exec(q)
+  if (lone) return lone[1] + " ft " + lone[2] + " in to cm"
+  return q.replace(/(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|'|′)\s*(\d+(?:\.\d+)?)(?!\s*(?:\d|\.|"|″|inch|in\b))/gi, "$1 ft $2 in")
+}
+
+var FEET_AND_INCHES = /\s+(?:to|in|into|as)\s+(?:feet|foot|ft)\s*(?:and|&|\+|,)?\s*(?:inches|inch|in)\s*$/i
+
+function feetAndInches(meters) {
+  var inches = meters / 0.0254
+  var sign = inches < 0 ? "-" : ""
+  inches = Math.abs(inches)
+  var ft = Math.floor(inches / 12)
+  var rest = Math.round((inches - ft * 12) * 100) / 100
+  if (rest >= 12) { ft++; rest = 0 }
+  var restText = trimNumber(rest)
+  return { display: sign + ft + " ft " + restText + " in", copy: sign + ft + "′" + restText + "″" }
+}
+
 function evaluate(query, env) {
   var q = String(query || "").trim()
   if (!q || q.length > 200) return null
   ENV = env || {}
   try {
-    var tokens = lex(q)
+    var wantsFeetInches = FEET_AND_INCHES.test(q)
+    var source = normalizeHeights(wantsFeetInches ? q.replace(FEET_AND_INCHES, "") : q)
+    var tokens = lex(source)
     if (tokens.length === 0) return null
     var tz = parseTimeZone(tokens)
     if (tz) {
@@ -1345,6 +1423,23 @@ function evaluate(query, env) {
     var parser = new Parser(tokens)
     var value = parser.parseStatement()
     var state = parser.state
+    if (wantsFeetInches) {
+      if (value.type !== "num" || !value.unit || dimsKey(value.unit.dims) !== "L1") return null
+      var fi = feetAndInches(toBase(value.n, value.unit))
+      return { kind: "conversion", input: q, result: fi.display, copy: fi.copy, value: value.n,
+        inputCaption: titleCase(value.unit.plural), resultCaption: "Feet and Inches" }
+    }
+    if (state.ops === 0 && value.type === "num" && value.unit && !value.pct && !value.unit.currency && /\d/.test(q)) {
+      var other = counterpart(value.unit)
+      if (!other) return null
+      state.kind = "conversion"
+      state.fromUnit = value.unit
+      state.toUnit = other
+      value = convert(value, other)
+      state.ops++
+    }
+    // 1e6 on its own shows its value; other bare numbers don't.
+    if (state.ops === 0 && value.type === "num" && !value.unit && /^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(q)) state.ops++
     if (state.ops === 0) return null
     if (value.type === "num" && !isFinite(value.n)) return null
     if (value.type === "date" && !isFinite(value.ms)) return null

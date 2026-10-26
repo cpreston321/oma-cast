@@ -125,6 +125,14 @@ another app does nothing (that needs input-device access).
 
 Import and export use Raycast's JSON format, `[{name, text, keyword?}]`.
 
+## Calculator
+
+Type a calculation in root search. An amount and a unit on their own convert
+to the obvious counterpart: `16rem` → 256 px, `5 kg` → 11.02 lb, `100 f` →
+37.78 °C, `5'10"` → 177.8 cm. Name a target with `to`/`in`: `180 cm in feet
+and inches`, `1 gb to mb`, `16 oz to ml`, `1in to px`, `0 c in k`. Currencies,
+dates, time zones, bases and percentages work too. ↵ copies the answer.
+
 ## Settings
 
 **oma-cast Settings** in root search, `Ctrl+,` in the launcher, or

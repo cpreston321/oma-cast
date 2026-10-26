@@ -65,6 +65,9 @@ PanelWindow {
 
   property var stack: [{ kind: "root", title: "oma-cast", query: "" }]
   readonly property var view: window.stack[window.stack.length - 1]
+  // A part-wheeled notch must not carry into a new view.
+  property int wheelAccumulator: 0
+  onStackChanged: window.wheelAccumulator = 0
   property string query: ""
   property int selectedIndex: -1
   property var selectedRow: null
@@ -175,6 +178,7 @@ PanelWindow {
   onShownChanged: {
     if (window.shown) return
     window.closePopups()
+    window.wheelAccumulator = 0
     var seconds = Number(window.general.popToRootTimeout)
     if (!(seconds > 0)) window.popToRoot()
     else { popTimer.interval = seconds * 1000; popTimer.restart() }
@@ -274,7 +278,9 @@ PanelWindow {
     return -1
   }
 
-  function select(index) {
+  // fromPointer: a hovered row is already on screen, so leave the scroll
+  // alone (the Omarchy menu doesn't scroll on hover either).
+  function select(index, fromPointer) {
     window.selectedIndex = index
     window.selectedRow = index >= 0 && index < rows.count ? rows.get(index) : null
     // Argument values belong to one command; a different row starts empty.
@@ -285,8 +291,35 @@ PanelWindow {
       window.argFocus = -1
     }
     window.argDefs = window.selectedRow && window.selectedRow.argsJson ? JSON.parse(window.selectedRow.argsJson) : []
+    if (fromPointer) return
     if (index >= 0) list.positionViewAtIndex(index, ListView.Contain)
     if (index === window.nextSelectable(-1, 1)) list.positionViewAtBeginning()
+  }
+
+  // One wheel notch moves one result; section titles ride along with the
+  // first row under them instead of eating a notch [D].
+  function wheelRows(steps) {
+    var top = list.indexAt(0, list.contentY + 1)
+    if (top < 0) return
+    var anchor = rows.get(top).rowKind === "item" ? top : window.nextSelectable(top, 1)
+    if (anchor < 0) anchor = window.nextSelectable(top, -1)
+    var target = anchor
+    var dir = steps > 0 ? 1 : -1
+    var todo = Math.abs(steps)
+    // After a touchpad leaves the top row cut off, the first notch up
+    // realigns that row instead of skipping past it.
+    var topItem = list.itemAtIndex(top)
+    if (dir < 0 && topItem && topItem.y < list.contentY - 1) { target = top; todo-- }
+    for (var n = 0; n < todo; n++) {
+      var next = window.nextSelectable(target, dir)
+      if (next < 0) break
+      target = next
+    }
+    if (target === window.nextSelectable(-1, 1)) { list.positionViewAtBeginning(); return }
+    var at = target > 0 && rows.get(target - 1).rowKind !== "item" ? target - 1 : target
+    // Clamps at the end of the list, so extra notches there do nothing,
+    // as in the Omarchy menu.
+    list.positionViewAtIndex(at, ListView.Beginning)
   }
 
   function move(delta) {
@@ -1292,7 +1325,7 @@ PanelWindow {
           appLibrary: window.appLibrary
           zoom: window.zoom
           // Hover doesn't move the selection while a pill is being typed in.
-          onHovered: function(i, item, mouse) { if (!window.actionPanelOpen && window.argFocus < 0 && pointerGate.moved(item, mouse)) window.select(i) }
+          onHovered: function(i, item, mouse) { if (!window.actionPanelOpen && window.argFocus < 0 && pointerGate.moved(item, mouse)) window.select(i, true) }
           onClicked: function(i) {
             if (window.pickingApp) { window.select(i); window.chooseOpenWith() }
             else window.perform("open", i)
@@ -1384,6 +1417,40 @@ PanelWindow {
         }
       }
 
+      // A sibling, not a child: children of a ListView live in its content
+      // item and scroll with it. Mouse wheels step by result; touchpads keep
+      // pixel scrolling [D]. Ignored under the action panel, like hover.
+      MouseArea {
+        anchors.fill: list
+        z: 1
+        enabled: list.visible
+        acceptedButtons: Qt.NoButton
+        onWheel: function(wheel) {
+          // Swallowed, not disabled: a disabled area would let the list scroll.
+          if (window.actionPanelOpen) return
+          // Step by rows only for a real wheel turn (NoScrollPhase): whole
+          // notches, or a hi-res wheel that reports no pixels. Qt also gives
+          // notched wheels a pixelDelta (15 px per notch), so pixelDelta alone
+          // can't spot a touchpad. Everything else scrolls by pixels, and
+          // angle-only events mid-gesture are dropped so a touchpad never
+          // snaps to a row [D].
+          var angle = wheel.angleDelta.y
+          var stepRows = wheel.phase === Qt.NoScrollPhase && angle !== 0
+            && (angle % 120 === 0 || wheel.pixelDelta.y === 0)
+          if (!stepRows) {
+            if (wheel.pixelDelta.y !== 0) {
+              var bottom = list.originY + Math.max(0, list.contentHeight - list.height)
+              list.contentY = Math.max(list.originY, Math.min(list.contentY - wheel.pixelDelta.y, bottom))
+            }
+            return
+          }
+          var r = Util.wheelSteps(window.wheelAccumulator, wheel.angleDelta.y)
+          window.wheelAccumulator = r.remainder
+          if (r.steps !== 0) window.wheelRows(-r.steps)
+        }
+      }
+
+      // Empty states.
       Column {
         anchors.centerIn: parent
         spacing: window.px(8)

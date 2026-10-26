@@ -79,12 +79,11 @@ PanelWindow {
   readonly property bool atRoot: window.stack.length === 1
   // A view where the query is the value being edited (the alias editor, or a
   // script menu's input prompt) rather than a search.
-  readonly property bool textEntry: window.view.kind === "alias" || window.view.kind === "script-input"
   readonly property bool emojiView: window.view.kind === "emoji"
   // Clipboard History and script menus with previews show the selected row
   // beside the list.
   property bool rowsHaveDetail: false
-  readonly property bool detailVisible: !window.textEntry && (window.view.kind === "clipboard-history" || (window.view.kind === "script-menu" && window.rowsHaveDetail))
+  readonly property bool detailVisible: !window.editor && (window.view.kind === "clipboard-history" || (window.view.kind === "script-menu" && window.rowsHaveDetail))
   readonly property var detail: {
     window.backend.detailRevision
     if (!window.detailVisible || !window.selectedRow) return null
@@ -99,14 +98,28 @@ PanelWindow {
   readonly property int emojiColumns: Math.max(6, Math.floor((window.cardWidth - window.px(32)) / window.px(62)))
   onEmojiColumnsChanged: if (window.emojiView) window.rebuild(false)
   readonly property bool compact: window.general.windowMode === "compact" && window.atRoot && !window.query
-  readonly property string placeholder: window.view.kind === "alias" ? "Type an alias, then press ↵"
-    : window.view.kind === "menu" ? "Search " + window.view.title + "…"
-    : window.view.kind === "calculator-history" ? "Search calculations…"
-    : window.view.kind === "emoji" ? "Search emoji…"
-    : window.view.kind === "clipboard-history" ? "Search clipboard history…"
-    : window.view.kind === "script-menu" ? "Search " + window.view.title + "…"
-    : window.view.kind === "script-input" ? window.view.title + "…"
-    : "Search for apps and commands…"
+  // Editor views (alias, quicklink form, import, a script menu's input prompt)
+  // take the header text as input instead of searching; a form edits its
+  // focused field there.
+  readonly property bool editor: ["alias", "script-input", "quicklink-form", "quicklink-import"].indexOf(window.view.kind) >= 0
+  readonly property bool formActive: window.view.kind === "quicklink-form"
+  readonly property var focusedField: window.formActive ? window.view.fields[window.view.focus] : null
+  // The Open With field filters installed apps instead of taking text.
+  readonly property bool pickingApp: !!(window.focusedField && window.focusedField.picker)
+  readonly property string placeholder: {
+    var kind = window.view.kind
+    if (kind === "alias") return "Type an alias, then press ↵"
+    if (kind === "script-input") return window.view.title + "…"
+    if (kind === "quicklink-import") return "Path to a JSON file, or ↵ to import the clipboard"
+    if (window.pickingApp) return "Search apps…"
+    if (window.focusedField) return window.focusedField.placeholder || window.focusedField.label
+    if (kind === "quicklinks") return "Search quicklinks…"
+    if (kind === "menu" || kind === "script-menu") return "Search " + window.view.title + "…"
+    if (kind === "calculator-history") return "Search calculations…"
+    if (kind === "emoji") return "Search emoji…"
+    if (kind === "clipboard-history") return "Search clipboard history…"
+    return "Search for apps and commands…"
+  }
 
   readonly property int cardWidth: Math.min(px(750), width - Style.gapsOut * 2)
   readonly property int fullHeight: Math.min(px(475), height - Style.gapsOut * 2)
@@ -163,7 +176,7 @@ PanelWindow {
     var saved = window.stack.slice()
     saved[saved.length - 1] = Object.assign({}, window.view, { query: window.query, selectedIndex: window.selectedIndex })
     window.stack = saved.concat([next])
-    window.query = next.kind === "alias" || next.kind === "script-input" ? (next.value || "") : ""
+    window.query = next.kind === "alias" || next.kind === "script-input" ? (next.value || "") : (next.fields ? window.fieldText(next.fields[0]) : "")
     window.rebuild(true)
   }
 
@@ -184,7 +197,8 @@ PanelWindow {
     rows.clear()
     window.rowsHaveDetail = false
     window.emojiRows = []
-    if (window.textEntry) { window.select(-1); return }
+    if (window.pickingApp) { window.fillOpenWithRows(); return }
+    if (window.editor) { window.select(-1); return }
     if (window.emojiView) { window.rebuildEmoji(keepId); return }
     var result = window.backend.callSync("rootSearch.search", { query: window.query, view: window.view, filter: window.atRoot ? window.rootFilter : "all" })
     if (!result.ok) {
@@ -382,10 +396,7 @@ PanelWindow {
     if (!window.selectedRow) return
     window.actionPanelOpen = false
     // ↵ on a command with an empty required argument focuses that pill.
-    if (actionId === "open" && window.argDefs.length) {
-      var missing = RootSearch.missingArgument(window.argDefs, window.argValues)
-      if (missing >= 0) { window.argFocus = missing; return }
-    }
+    if (actionId === "open" && window.focusMissingArgument()) return
     window.request({ id: window.selectedRow.itemId, action: actionId, query: window.query, arguments: window.argValues })
   }
 
@@ -397,6 +408,7 @@ PanelWindow {
 
   function handleOutcome(outcome, payload) {
     if (outcome.confirm) { window.alert = { spec: outcome.confirm, payload: payload }; return }
+    if (outcome.arguments) { window.focusMissingArgument(); return }
     if (outcome.push) { window.push(outcome.push); return }
     if (outcome.close) {
       if (outcome.hud) window.hud(outcome.hud)
@@ -483,7 +495,26 @@ PanelWindow {
     if (action.done) window.showToast("success", action.done)
   }
 
-  // Typing, Tab and Backspace while an argument pill has focus.
+  // Focus the first required argument still empty; true when there is one.
+  function focusMissingArgument() {
+    if (!window.argDefs.length) return false
+    var missing = RootSearch.missingArgument(window.argDefs, window.argValues)
+    if (missing < 0) return false
+    window.argFocus = missing
+    return true
+  }
+
+  // A quicklink argument with options steps through them with ↑/↓ [D].
+  function stepOption(def, value, direction) {
+    var options = def.options
+    var current = String(value || "").toLowerCase()
+    var at = -1
+    for (var i = 0; i < options.length; i++) if (options[i].title.toLowerCase() === current || options[i].value.toLowerCase() === current) at = i
+    var next = at < 0 ? (direction > 0 ? 0 : options.length - 1) : (at + direction + options.length) % options.length
+    return options[next].title
+  }
+
+  // Typing, Tab, Backspace and option ↑/↓ while an argument pill has focus.
   function handleArgumentKey(event, shift) {
     var def = window.argDefs[window.argFocus]
     var value = window.argValues[def.name] || ""
@@ -493,6 +524,10 @@ PanelWindow {
       values[def.name] = next
       window.argValues = values
     }
+    if (def.options && def.options.length && (key === Qt.Key_Up || key === Qt.Key_Down) && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))) {
+      set(window.stepOption(def, value, key === Qt.Key_Down ? 1 : -1))
+      return true
+    }
     if (key === Qt.Key_Tab || key === Qt.Key_Backtab) {
       var step = shift || key === Qt.Key_Backtab ? -1 : 1
       var next = window.argFocus + step
@@ -500,7 +535,8 @@ PanelWindow {
       return true
     }
     if (key === Qt.Key_Backspace && !value) { window.argFocus--; return true }
-    if (Util.editsFilter(event, value)) { set(Util.editedFilter(event, value)); return true }
+    // editsFilter skips an empty value; an edit key there must not fall through to the search text.
+    if (Util.editsFilter(event, value || " ")) { if (value) set(Util.editedFilter(event, value)); return true }
     if (window.isTyping(event)) { set(value + event.text); return true }
     return false
   }
@@ -508,6 +544,153 @@ PanelWindow {
   function askAgent() {
     var r = window.backend.callSync("rootSearch.performAction", { id: Agent.FALLBACK_ID, action: "open", query: window.query })
     if (!r.ok) window.showToast("failure", r.error)
+  }
+
+  // --------------------------------------------------------------- forms
+
+  // The header text for a field: its value, except the picker, which starts
+  // with an empty search.
+  function fieldText(field) {
+    return field && !field.picker ? String(field.value || "") : ""
+  }
+
+  function replaceView(changes) {
+    var stack = window.stack.slice()
+    stack[stack.length - 1] = Object.assign({}, window.view, changes)
+    window.stack = stack
+  }
+
+  // Copy the header into the focused field's value.
+  function stashField() {
+    if (!window.formActive || window.pickingApp) return
+    var fields = window.view.fields.map(function(f) { return Object.assign({}, f) })
+    fields[window.view.focus].value = window.query
+    window.replaceView({ fields: fields })
+  }
+
+  function setFormFocus(index) {
+    if (!window.formActive || index < 0 || index >= window.view.fields.length) return
+    window.stashField()
+    window.replaceView({ focus: index })
+    window.query = window.fieldText(window.view.fields[index])
+    window.rebuild(true)
+  }
+
+  // Fill a new, untouched Create Quicklink form from the clipboard.
+  function autofillQuicklink(suggested) {
+    if (!window.formActive || window.view.quicklinkId) return
+    window.stashField()
+    var fields = window.view.fields.map(function(f) { return Object.assign({}, f) })
+    if (fields.some(function(f) { return f.value })) return
+    fields.forEach(function(f) { if (f.key === "name" || f.key === "link") f.value = suggested[f.key] || "" })
+    window.replaceView({ fields: fields })
+    if (!window.pickingApp) window.query = window.fieldText(fields[window.view.focus])
+  }
+
+  function formValues() {
+    window.stashField()
+    var out = ({})
+    for (var i = 0; i < window.view.fields.length; i++) out[window.view.fields[i].key] = window.view.fields[i].value
+    return out
+  }
+
+  function fillOpenWithRows() {
+    var current = window.focusedField.value || ""
+    var r = window.backend.callSync("quicklinks.openWithChoices", { query: window.query, current: current })
+    var choices = r.ok ? r.data : []
+    var keep = -1
+    for (var i = 0; i < choices.length; i++) {
+      if (choices[i].id === current) keep = rows.count
+      rows.append(window.rowData(choices[i], "item"))
+    }
+    window.select(!window.query && keep >= 0 ? keep : window.nextSelectable(-1, 1))
+  }
+
+  // ↵ in Open With picks the highlighted app; ↵ on the app already chosen saves.
+  readonly property bool pickedSelected: window.pickingApp && !!window.selectedRow && window.selectedRow.itemId === (window.focusedField.value || "")
+
+  function chooseOpenWith() {
+    if (!window.selectedRow) return
+    if (window.pickedSelected) { window.saveQuicklink(); return }
+    var fields = window.view.fields.map(function(f) { return Object.assign({}, f) })
+    fields[window.view.focus].value = window.selectedRow.itemId
+    window.replaceView({ fields: fields })
+    window.query = ""
+    window.rebuild(true)
+  }
+
+  function openWithText(id) {
+    var r = window.backend.callSync("quicklinks.openWithLabel", { id: id || "" })
+    return r.ok ? String(r.data) : String(id || "")
+  }
+
+  function saveQuicklink() {
+    var data = window.formValues()
+    var editing = !!window.view.quicklinkId
+    if (editing) data.id = window.view.quicklinkId
+    var r = window.backend.callSync(editing ? "quicklinks.update" : "quicklinks.save", data)
+    if (!r.ok) { window.showToast("failure", r.error); return }
+    window.pop()
+    window.showToast("success", editing ? "Quicklink saved" : "Quicklink created")
+    window.rebuild(false)
+  }
+
+  // `oma-cast run quicklink:<id>` for a link with arguments: find its row
+  // and put the cursor in its first empty pill.
+  function promptArguments(target) {
+    window.setQuery(String(target.title || ""))
+    for (var i = 0; i < rows.count; i++) {
+      if (rows.get(i).itemId === target.id) { window.select(i); window.focusMissingArgument(); return }
+    }
+    window.showToast("failure", "Cannot find " + target.title)
+  }
+
+  function importQuicklinks() {
+    var r = window.backend.callSync("quicklinks.import", { path: window.query })
+    if (!r.ok) { window.showToast("failure", r.error); return }
+    window.pop()
+    window.showToast(r.data.ok ? "success" : "failure", r.data.title)
+    window.rebuild(false)
+  }
+
+  function isTab(event) { return event.key === Qt.Key_Tab && !(event.modifiers & Qt.ShiftModifier) }
+  function isBacktab(event) { return event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier) !== 0) }
+
+  // Keys inside an editor view; true when handled.
+  function handleEditorKey(event, key, ctrl, enter) {
+    var kind = window.view.kind
+    if (kind === "alias") {
+      if (enter) { window.saveAlias(); return true }
+      return key === Qt.Key_Space
+    }
+    if (kind === "quicklink-import") {
+      if (enter) { window.importQuicklinks(); return true }
+      return false
+    }
+    if (kind === "script-input") {
+      if (enter) { window.submitInput(); return true }
+      return false
+    }
+    var focus = window.view.focus
+    var last = window.view.fields.length - 1
+    if (enter && ctrl) { window.saveQuicklink(); return true }
+    if (window.isTab(event)) { window.setFormFocus(focus + 1); return true }
+    if (window.isBacktab(event)) { window.setFormFocus(focus - 1); return true }
+    if (window.pickingApp) {
+      if (enter) { window.chooseOpenWith(); return true }
+      var dir = window.direction(event, ctrl, false, true)
+      if (dir > 0) { window.move(1); return true }
+      if (dir < 0) {
+        if (window.selectedIndex === window.nextSelectable(-1, 1)) window.setFormFocus(focus - 1)
+        else window.move(-1)
+        return true
+      }
+      return false
+    }
+    if (enter) { if (focus >= last) window.saveQuicklink(); else window.setFormFocus(focus + 1); return true }
+    if (key === Qt.Key_Down) { window.setFormFocus(focus + 1); return true }
+    if (key === Qt.Key_Up) { window.setFormFocus(focus - 1); return true }
+    return false
   }
 
   function saveAlias() {
@@ -555,7 +738,7 @@ PanelWindow {
     if (window.view.kind === "script-input" && next.length > (window.view.maxLength || 256)) return
     window.query = next
     window.historyIndex = -1
-    window.rebuild(true)
+    if (!window.editor || window.pickingApp) window.rebuild(true)
   }
 
   function pasteClipboard() {
@@ -612,7 +795,7 @@ PanelWindow {
       window.popToRoot()
       return
     }
-    if (window.query && !window.textEntry) window.setQuery("")
+    if (window.query && (!window.editor || window.pickingApp)) window.setQuery("")
     else if (!window.atRoot) window.pop()
     else window.dismissRequested()
   }
@@ -652,7 +835,8 @@ PanelWindow {
 
     if (window.alert) {
       if (key === Qt.Key_Escape) window.alert = null
-      else if (enter) window.confirmAlert()
+      // A held Enter that opened the alert must not also confirm it.
+      else if (enter && !event.isAutoRepeat) window.confirmAlert()
       return true
     }
     if (key === Qt.Key_Escape) { window.handleEscape(shift); return true }
@@ -684,9 +868,8 @@ PanelWindow {
       return window.handlePopupKey(event, actionPanel, ctrl, alt)
     }
 
-    if (window.textEntry) {
-      if (enter) { if (window.view.kind === "alias") window.saveAlias(); else window.submitInput(); return true }
-      if (key === Qt.Key_Space && window.view.kind === "alias") return true
+    if (window.editor) {
+      if (window.handleEditorKey(event, key, ctrl, enter)) return true
     } else {
       if (window.emojiView && window.handleEmojiKey(event, ctrl, alt)) return true
       if (window.atRoot && enter && ctrl && alt && !shift) { window.askAgent(); return true }
@@ -715,9 +898,10 @@ PanelWindow {
       if (key === Qt.Key_PageUp) { window.move(-8); return true }
       if (key === Qt.Key_PageDown) { window.move(8); return true }
       if (ctrl && shift && key === Qt.Key_F) { window.performIfOffered(["favorite-add", "favorite-remove"]); return true }
-      if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer"]); return true }
+      if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer", "copy-link"]); return true }
       if (ctrl && shift && key === Qt.Key_D) { window.performIfOffered(["delete-all-entries"]); return true }
-      if (ctrl && key === Qt.Key_D) { window.performIfOffered(["delete-entry"]); return true }
+      if (ctrl && key === Qt.Key_D) { window.performIfOffered(["delete-entry", "delete-quicklink"]); return true }
+      if (ctrl && !shift && key === Qt.Key_E && window.performIfOffered(["edit-quicklink"])) return true
       if (alt && shift && key === Qt.Key_D) { window.performIfOffered(["disable"]); return true }
       if (ctrl && key >= Qt.Key_1 && key <= Qt.Key_9) {
         var target = window.nthItem(key - Qt.Key_0)
@@ -727,7 +911,7 @@ PanelWindow {
     }
 
     if (Util.editsFilter(event, window.query)) { window.setQuery(Util.editedFilter(event, window.query)); return true }
-    if (key === Qt.Key_Backspace && !window.query && !window.atRoot) { window.pop(); return true }
+    if (key === Qt.Key_Backspace && !window.query && !window.atRoot && !window.formActive) { window.pop(); return true }
     if (window.isTyping(event)) { window.setQuery(window.query + event.text); return true }
     return false
   }
@@ -739,8 +923,8 @@ PanelWindow {
 
   Connections {
     target: window.backend
-    function onCandidatesRevisionChanged() { if (window.shown && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
-    function onViewRevisionChanged() { if (window.shown && !window.atRoot && !window.textEntry && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
+    function onCandidatesRevisionChanged() { if (window.shown && !window.actionPanelOpen && !window.alert && (!window.editor || window.pickingApp)) window.rebuild(false) }
+    function onViewRevisionChanged() { if (window.shown && !window.atRoot && !window.editor && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
     function onNotification(method, data) {
       if (method === "agent.launchFailed" && window.shown) window.showToast("failure", data.message)
       // A script menu command finished (Backend.runScriptPlan).
@@ -750,6 +934,11 @@ PanelWindow {
           if (window.shown) window.dismissRequested()
         } else if (window.shown) window.showToast(data.ok ? "success" : "failure", data.message)
         else if (!data.ok) window.hud(data.message)
+      }
+      if (method === "quicklinks.autofill") window.autofillQuicklink(data)
+      if (method === "quicklinks.exported" || method === "quicklinks.imported") {
+        if (window.shown) window.showToast(data.ok ? "success" : "failure", data.title)
+        else window.hud(data.title)
       }
     }
     // Exchange rates or zone offsets arrived: re-evaluate a calculation on screen.
@@ -857,7 +1046,7 @@ PanelWindow {
 
       Row {
         id: pills
-        visible: window.argDefs.length > 0 && !window.textEntry
+        visible: window.argDefs.length > 0 && !window.editor
         x: queryText.x + (window.query ? queryText.width : 0) + window.px(10)
         anchors.verticalCenter: parent.verticalCenter
         spacing: window.px(6)
@@ -886,7 +1075,7 @@ PanelWindow {
               anchors.rightMargin: window.px(10)
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
-              text: pill.value || (pill.modelData.placeholder + (pill.modelData.required ? "" : " (optional)"))
+              text: pill.value || (pill.modelData.placeholder + (pill.modelData.required || pill.modelData.defaultValue ? "" : " (optional)"))
               opacity: pill.value ? 1 : 0.5
               color: window.look.foreground
               elide: Text.ElideLeft
@@ -992,15 +1181,78 @@ PanelWindow {
       anchors.leftMargin: card.borderLeft + window.px(8)
       anchors.rightMargin: card.borderRight + window.px(8)
 
+      // The form's fields; the focused one shows the header text.
+      Column {
+        id: formColumn
+        visible: window.formActive
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: window.px(8)
+        spacing: window.px(2)
+
+        Repeater {
+          model: window.formActive ? window.view.fields : []
+          delegate: Item {
+            required property var modelData
+            required property int index
+            readonly property bool focused: index === window.view.focus
+            width: formColumn.width
+            height: window.px(40)
+
+            Rectangle {
+              anchors.fill: parent
+              radius: Math.max(Style.cornerRadius, window.px(6))
+              color: parent.focused ? window.look.selectedBackground : "transparent"
+            }
+            Text {
+              id: fieldLabel
+              anchors.left: parent.left
+              anchors.leftMargin: window.px(12)
+              anchors.verticalCenter: parent.verticalCenter
+              width: window.px(110)
+              textFormat: Text.PlainText
+              text: modelData.label
+              color: window.look.foreground
+              opacity: 0.55
+              font.family: window.look.fontFamily
+              font.pixelSize: Math.round(Style.font.body * window.zoom)
+              elide: Text.ElideRight
+            }
+            Text {
+              anchors.left: fieldLabel.right
+              anchors.leftMargin: window.px(8)
+              anchors.right: parent.right
+              anchors.rightMargin: window.px(12)
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              readonly property string value: modelData.picker ? (window.backend.candidatesRevision, window.openWithText(modelData.value))
+                : (parent.focused ? window.query : String(modelData.value || ""))
+              text: value || modelData.placeholder || ""
+              opacity: value ? 1 : 0.4
+              color: window.look.foreground
+              font.family: window.look.fontFamily
+              font.pixelSize: Math.round(Style.font.title * window.zoom)
+              elide: Text.ElideRight
+            }
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: window.setFormFocus(index)
+            }
+          }
+        }
+      }
+
       ListView {
         id: list
         anchors.left: parent.left
-        anchors.top: parent.top
         anchors.bottom: parent.bottom
+        anchors.top: window.formActive ? formColumn.bottom : parent.top
         width: window.detailVisible ? Math.round(parent.width * 0.5) : parent.width
         anchors.topMargin: window.px(4)
         anchors.bottomMargin: window.px(4)
-        visible: !window.textEntry && !window.emojiView
+        visible: (!window.editor || window.pickingApp) && !window.emojiView
         clip: true
         model: rows
         boundsBehavior: Flickable.StopAtBounds
@@ -1010,8 +1262,12 @@ PanelWindow {
           look: window.look
           appLibrary: window.appLibrary
           zoom: window.zoom
-          onHovered: function(i, item, mouse) { if (!window.actionPanelOpen && pointerGate.moved(item, mouse)) window.select(i) }
-          onClicked: function(i) { window.perform("open", i) }
+          // Hover doesn't move the selection while a pill is being typed in.
+          onHovered: function(i, item, mouse) { if (!window.actionPanelOpen && window.argFocus < 0 && pointerGate.moved(item, mouse)) window.select(i) }
+          onClicked: function(i) {
+            if (window.pickingApp) { window.select(i); window.chooseOpenWith() }
+            else window.perform("open", i)
+          }
         }
       }
 
@@ -1102,21 +1358,22 @@ PanelWindow {
       Column {
         anchors.centerIn: parent
         spacing: window.px(8)
-        visible: window.textEntry || (window.emojiView ? window.emojiRows.length === 0 : rows.count === 0)
+        visible: !window.formActive && (window.editor || (window.emojiView ? window.emojiRows.length === 0 : rows.count === 0))
 
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.textEntry ? "" : ""
+          text: window.editor ? "" : ""
           color: window.look.accent
-          font.family: window.textEntry ? window.look.fontFamily : "omarchy"
+          font.family: window.editor ? window.look.fontFamily : "omarchy"
           font.pixelSize: window.px(28)
         }
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.textEntry ? window.view.title
+          text: window.editor ? window.view.title
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
+            : window.view.kind === "quicklinks" && !window.query ? "No Quicklinks Yet"
             : window.view.kind === "clipboard-history" && !window.query ? "Clipboard Is Empty"
             : window.view.kind === "script-menu" && window.backend.loading ? "Loading…"
             : window.emojiView && window.query ? "No Emoji Found"
@@ -1128,10 +1385,17 @@ PanelWindow {
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.view.kind === "alias" ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
-            : window.view.kind === "script-input" ? "Press ↵ to continue, Esc to cancel."
-            : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer."
-            : window.view.kind === "clipboard-history" && !window.query ? "Copy something and it shows up here." : ""
+          text: {
+            switch (window.view.kind) {
+              case "alias": return "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
+              case "script-input": return "Press ↵ to continue, Esc to cancel."
+              case "quicklink-import": return "Reads a JSON array of {name, link} rows, as Raycast exports them. Rows already saved are skipped."
+              case "calculator-history": return window.query ? "" : "Type a calculation in the root search, then copy or paste the answer."
+              case "quicklinks": return window.query ? "" : "Run Create Quicklink, or type a web address in the root search."
+              case "clipboard-history": return window.query ? "" : "Copy something and it shows up here."
+            }
+            return ""
+          }
           visible: text.length > 0
           color: window.look.foreground
           opacity: 0.55
@@ -1207,6 +1471,9 @@ PanelWindow {
           window.backend.storeRevision
           if (window.view.kind === "alias") return { title: "Save Alias", shortcut: "↵" }
           if (window.view.kind === "script-input") return { title: "Continue", shortcut: "↵" }
+          if (window.pickingApp) return { title: window.pickedSelected ? "Save Quicklink" : "Select App", shortcut: "↵" }
+          if (window.formActive) return { title: window.view.focus >= window.view.fields.length - 1 ? "Save Quicklink" : "Next Field", shortcut: "↵" }
+          if (window.view.kind === "quicklink-import") return { title: window.query ? "Import File" : "Import Clipboard", shortcut: "↵" }
           var list = window.actionsForSelected()
           return list.length ? list[0] : null
         }
@@ -1228,14 +1495,14 @@ PanelWindow {
           zoom: window.zoom
         }
         Rectangle {
-          visible: !window.textEntry
+          visible: !window.editor
           anchors.verticalCenter: parent.verticalCenter
           width: 1
           height: window.px(14)
           color: Util.alpha(window.look.foreground, 0.2)
         }
         Text {
-          visible: !window.textEntry
+          visible: !window.editor
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: "Actions"
@@ -1245,7 +1512,7 @@ PanelWindow {
           font.pixelSize: Math.round(Style.font.bodySmall * window.zoom)
         }
         KeyHint {
-          visible: !window.textEntry
+          visible: !window.editor
           anchors.verticalCenter: parent.verticalCenter
           keys: window.actionPanelKeys
           color: window.look.foreground

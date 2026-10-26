@@ -73,7 +73,12 @@ var BUILTINS = [
   { id: "builtin:create-quicklink", title: "Create Quicklink", subtitle: "Quicklinks", keywords: ["link", "bookmark", "url"], glyph: "", run: { quicklinks: "create" } },
   { id: "builtin:search-quicklinks", title: "Search Quicklinks", subtitle: "Quicklinks", keywords: ["link", "bookmark"], glyph: "", run: { quicklinks: "search" } },
   { id: "builtin:import-quicklinks", title: "Import Quicklinks", subtitle: "Quicklinks", keywords: ["link", "json"], glyph: "", run: { quicklinks: "import" } },
-  { id: "builtin:export-quicklinks", title: "Export Quicklinks", subtitle: "Quicklinks", keywords: ["link", "json", "backup"], glyph: "", run: { quicklinks: "export" } }
+  { id: "builtin:export-quicklinks", title: "Export Quicklinks", subtitle: "Quicklinks", keywords: ["link", "json", "backup"], glyph: "", run: { quicklinks: "export" } },
+  // Snippets (fork, SPEC §8.3; launcher only). Create opens Settings, where
+  // the text gets a real multi-line editor.
+  { id: "builtin:search-snippets", title: "Search Snippets", subtitle: "Snippets", keywords: ["snippet", "text", "template", "paste"], glyph: "\uf121", run: { push: { kind: "snippets", title: "Search Snippets" } } },
+  { id: "builtin:create-snippet", title: "Create Snippet", subtitle: "Snippets", keywords: ["snippet", "text", "template", "new"], glyph: "\uf121", run: { settings: { tab: "snippets", snippetId: "new" } } },
+  { id: "builtin:settings", title: "oma-cast Settings", subtitle: "oma-cast", keywords: ["settings", "preferences", "config", "aliases", "options"], glyph: "\uf013", run: { settings: { tab: "general" } }, rootSearch: { when: "always" } }
 ]
 
 function words(value) {
@@ -345,6 +350,16 @@ function quicklinkSections(candidates, query, ctx, deps) {
   return ranked.length ? [{ id: "results", title: "Results", rows: ranked }] : []
 }
 
+// Search Snippets: every snippet by name, or ranked by the query.
+function snippetSections(candidates, query, ctx, deps) {
+  var q = String(query || "").trim()
+  var inside = []
+  for (var i = 0; i < candidates.length; i++) if (candidates[i].kind === "snippet") inside.push(decorate(candidates[i], ctx, deps))
+  if (!q) return inside.length ? [{ id: "snippets", title: "", rows: inside.map(function(c) { return { candidate: c, record: null } }) }] : []
+  var ranked = deps.Ranker.rank(inside, q, rankOptions(ctx))
+  return ranked.length ? [{ id: "results", title: "Results", rows: ranked }] : []
+}
+
 function actionsFor(candidate) {
   if (candidate.kind === "emoji") {
     return [
@@ -383,6 +398,7 @@ function actionsFor(candidate) {
     case "omarchy-menu":
     case "omarchy-link": primary = { id: "open", title: "Open Menu", icon: "" }; break
     case "quicklink": primary = { id: "open", title: "Open Quicklink", icon: "" }; break
+    case "snippet": primary = { id: "open", title: "Paste Snippet", icon: "\uf0ea" }; break
     case "url-open":
     case "url-create": primary = { id: "open", title: candidate.title, icon: "" }; break
     case "fallback": primary = { id: "open", title: candidate.title, icon: "" }; break
@@ -401,6 +417,10 @@ function actionsFor(candidate) {
     list.push({ id: "edit-quicklink", title: "Edit Quicklink", shortcut: "Ctrl E", section: "primary", icon: "" })
     list.push({ id: "copy-link", title: "Copy Link", shortcut: "Ctrl Shift C", section: "copy", icon: "" })
   }
+  if (candidate.kind === "snippet") {
+    list.push({ id: "copy-snippet", title: "Copy to Clipboard", shortcut: "Ctrl ↵", section: "primary", icon: "\uf0c5" })
+    list.push({ id: "edit-snippet", title: "Edit Snippet", shortcut: "Ctrl E", section: "primary", icon: "\uf044" })
+  }
   if (candidate.kind === "omarchy-action") list.push({ id: "copy-command", title: "Copy Command", shortcut: "Ctrl Shift C", section: "copy", icon: "" })
 
   if (candidate.favoriteOrder === null || candidate.favoriteOrder === undefined) {
@@ -414,6 +434,7 @@ function actionsFor(candidate) {
   if (candidate.alias) list.push({ id: "remove-alias", title: "Remove Alias", shortcut: "", section: "configure", icon: "" })
   if (candidate.frecency > 1) list.push({ id: "reset-ranking", title: "Reset Ranking", shortcut: "", section: "configure", icon: "" })
   if (candidate.kind === "quicklink") list.push({ id: "delete-quicklink", title: "Delete Quicklink", shortcut: "Ctrl D", section: "delete", icon: "" })
+  else if (candidate.kind === "snippet") list.push({ id: "delete-snippet", title: "Delete Snippet", shortcut: "Ctrl D", section: "delete", icon: "\uf1f8" })
   else list.push({ id: "disable", title: "Disable Command", shortcut: "Alt Shift D", section: "delete", icon: "" })
   return list
 }
@@ -526,6 +547,7 @@ if (typeof module !== "undefined") {
     rootSections: rootSections,
     submenuSections: submenuSections,
     quicklinkSections: quicklinkSections,
+    snippetSections: snippetSections,
     actionsFor: actionsFor,
     reorderFavorites: reorderFavorites,
     fallbackUrl: fallbackUrl

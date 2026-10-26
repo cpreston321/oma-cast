@@ -106,6 +106,35 @@ root command, so you can alias or favorite it like anything else.
   `provider` executable) show up in root search while you type, e.g. a camera
   from a UniFi provider. Other omalaunch modes aren't supported.
 
+## Snippets
+
+**Search Snippets** lists them with a preview; a snippet also turns up in
+root search by its name or keyword. `↵` pastes, `Ctrl+↵` copies, `Ctrl+E`
+edits and `Ctrl+D` deletes. **Create Snippet** (or Settings → Snippets) has
+a multi-line editor that checks the text as you type.
+
+Placeholders follow Raycast's: `{cursor}` (the caret lands there after
+pasting), `{clipboard}` / `{clipboard offset=1}` (from clipboard history),
+`{argument name="who" default="team"}` (up to three, shown as pills),
+`{date format="yyyy-MM-dd" offset="+1d"}`, `{time}`, `{datetime}`, `{day}`,
+`{uuid}`, `{calculator expression="2+2"}`, `{snippet name="Signature"}`, and
+the modifiers `| uppercase`, `| lowercase`, `| trim`, `| percent-encode`,
+`| json-stringify`. Any other `{word}` stays as written, so code pastes
+untouched. Snippets expand from the launcher only: typing a keyword in
+another app does nothing (that needs input-device access).
+
+Import and export use Raycast's JSON format, `[{name, text, keyword?}]`.
+
+## Settings
+
+**oma-cast Settings** in root search, `Ctrl+,` in the launcher, or
+`oma-cast settings [tab]`. Tabs: General (window mode, text size, Esc,
+return-to-root delay, navigation keys, search sensitivity), Commands
+(every command's alias and on/off switch, including ones you disabled),
+Snippets, Quicklinks and Calculator (currency rates, clock format, rem
+size, work-day hours, history). `Ctrl+1`…`5` switch tabs, `Ctrl+S` saves,
+`Esc` closes.
+
 ### Bar button and Super+Space
 
 `oma-cast install-button` puts an Omarchy logo at the left of the bar that
@@ -155,11 +184,12 @@ oma-cast doctor
 
 oma-cast is early. Search, ranking and the Omarchy integration are done. Coming next:
 
-- [ ] Settings window
+- [x] Settings window
 - [ ] Script Commands
 - [x] Quicklinks
 - [x] Calculator
-- [ ] Clipboard history, snippets
+- [x] Clipboard history
+- [x] Snippets (from the launcher; keyword expansion in other apps not yet)
 - [ ] Running Raycast extensions built from the open-source [`raycast/extensions`](https://github.com/raycast/extensions) repo
 - [ ] Window management
 - [ ] Importing your `.rayconfig` from macOS

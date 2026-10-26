@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import qs.Commons
 import "ui"
+import "ui/settings"
 
 Item {
   id: root
@@ -84,11 +85,23 @@ Item {
   Connections {
     target: backend
     function onNotification(method, data) {
+      if (method === "settings.open") { root.openSettings(data); return }
       if (method !== "agent.launchReady") return
       root.hide()
       launcher.popToRoot()
       Util.execArgv(data.argv)
     }
+  }
+
+  // Opens from root search, Ctrl+, in the launcher, or `oma-cast settings`.
+  function openSettings(target) {
+    root.hide()
+    settingsWindow.open(target || {})
+  }
+
+  SettingsWindow {
+    id: settingsWindow
+    backend: backend
   }
 
   LauncherWindow {
@@ -130,6 +143,11 @@ Item {
 
     function ping(): string {
       return "ok"
+    }
+
+    function settings(tab: string): string {
+      root.openSettings({ tab: tab })
+      return "shown"
     }
 
     function run(commandId: string): string {

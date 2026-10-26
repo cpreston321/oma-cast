@@ -594,6 +594,11 @@ if (typeof module !== "undefined") {
     findApp: findApp,
     openWithLabel: openWithLabel,
     openWithChoices: openWithChoices,
-    randomUuid: randomUuid
+    randomUuid: randomUuid,
+    // The placeholder lexer, shared with Snippets.js through QML deps.
+    placeholderEnd: placeholderEnd,
+    tokenize: tokenize,
+    parseOptions: parseOptions,
+    dateText: dateText
   }
 }

@@ -11,6 +11,7 @@ import "core/Frecency.js" as Frecency
 import "core/OmarchyMenu.js" as OmarchyMenu
 import "core/RootSearch.js" as RootSearch
 import "core/Quicklinks.js" as Quicklinks
+import "core/Snippets.js" as Snippets
 import "core/Agent.js" as Agent
 import "core/Calculator.js" as Calculator
 import "core/Emoji.js" as Emoji
@@ -88,6 +89,7 @@ Item {
     for (var b = 0; b < RootSearch.BUILTINS.length; b++) next.push(RootSearch.builtinCandidate(RootSearch.BUILTINS[b]))
     next = next.concat(backend.scriptCandidates())
     if (quicklinksStore.loaded) next = next.concat(Quicklinks.list(quicklinksStore.doc).map(Quicklinks.toCandidate))
+    if (snippetsStore.loaded) next = next.concat(Snippets.list(snippetsStore.doc).map(function(item) { return Snippets.toCandidate(item, snippetsStore.doc, backend.snippetDeps) }))
     var byId = ({})
     for (var j = 0; j < next.length; j++) byId[next[j].id] = next[j]
     backend.candidates = next
@@ -443,11 +445,14 @@ Item {
           }
           backend.recordVisit(id, query)
           if (candidate.run.quicklinks) return backend.quicklinksCommand(candidate.run.quicklinks)
+          if (candidate.run.settings) return backend.openSettings(candidate.run.settings)
           if (candidate.run.push) return { push: candidate.run.push }
           if (candidate.run.summon) backend.summonPlugin(candidate.run.summon, candidate.run.payload || "{}")
           return { close: true }
         case "quicklink":
           return backend.openQuicklink(candidate.quicklinkId, (data && data.arguments) || {}, query)
+        case "snippet":
+          return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, "paste")
         case "fallback":
           Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(candidate, query)])
           return { close: true }
@@ -462,6 +467,18 @@ Item {
       case "edit-quicklink":
         var editing = Quicklinks.get(quicklinksStore.doc, candidate.quicklinkId)
         return { push: backend.quicklinkForm("Edit Quicklink", editing) }
+      case "copy-snippet":
+        return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, "copy")
+      case "edit-snippet":
+        return backend.openSettings({ tab: "snippets", snippetId: candidate.snippetId })
+      case "delete-snippet":
+        if (!(data && data.confirmed)) return { confirm: {
+          title: "Delete Snippet", destructive: true, primary: "Delete",
+          message: "Delete “" + candidate.title + "”? This also removes its alias, favourite and ranking."
+        } }
+        var removedSnippet = backend.callSync("snippets.delete", { id: candidate.snippetId })
+        if (!removedSnippet.ok) throw new Error(removedSnippet.error)
+        return { toast: { style: "success", title: "Snippet deleted" } }
       case "copy-link":
         Util.execArgv(["wl-copy", "--", Quicklinks.get(quicklinksStore.doc, candidate.quicklinkId).link])
         return { close: true, hud: "Copied to Clipboard" }
@@ -511,6 +528,94 @@ Item {
         ] } }
     }
     throw new Error("Unknown action " + action)
+  }
+
+  // -------------------------------------------------------------- snippets
+
+  readonly property var snippetDeps: ({ lexer: Quicklinks })
+
+  function storeSnippets(doc) {
+    if (!snippetsStore.loaded) throw new Error("snippets are not loaded yet")
+    if (!snippetsStore.update(function(stored) { stored.items = doc.items })) throw new Error("snippets are read-only: " + (snippetsStore.lastError || "written by a newer build"))
+    rebuildTimer.restart()
+  }
+
+  // Text history entries, newest first, for {clipboard offset=N}.
+  function clipboardText(offset) {
+    var texts = clipboardSource.entries.filter(function(e) { return e.kind !== "image" })
+    return offset < texts.length ? texts[offset].text : null
+  }
+
+  // ↵ pastes, Ctrl+↵ copies. Missing required arguments focus their pill.
+  function pasteSnippet(id, values, query, mode) {
+    var item = Snippets.get(snippetsStore.doc, id)
+    if (!item) return { toast: { style: "failure", title: "Snippet not found" } }
+    var parsed = Snippets.analyze(item.text, snippetsStore.doc, backend.snippetDeps)
+    if (parsed.error) return { toast: { style: "failure", title: parsed.error } }
+    var missing = parsed.arguments.some(function(a) { return !a.defaultValue && !String(values[a.name] || "").trim() })
+    if (missing) return { arguments: { id: "snippet:" + item.id, title: item.name } }
+    var args = Snippets.argumentValues(parsed.arguments, values)
+    if (args.error) return { toast: { style: "failure", title: args.error } }
+    var expanded = Snippets.expand(item.text, snippetsStore.doc, {
+      now: Date.now(), values: args.values, names: backend.localeNames, uuid: Quicklinks.randomUuid,
+      clipboard: backend.clipboardText,
+      calculate: function(expression) { var c = backend.calculate(expression); return c ? c.copy : null }
+    }, backend.snippetDeps)
+    if (expanded.error) return { toast: { style: "failure", title: expanded.error } }
+    backend.recordVisit("snippet:" + item.id, query)
+    textPaster.run(expanded.text, mode, mode === "paste" ? expanded.cursorFromEnd : 0)
+    return mode === "copy" ? { close: true, hud: "Copied to Clipboard" } : { close: true }
+  }
+
+  function snippetImportSummary(text, emptyMessage) {
+    if (!String(text || "").trim()) throw new Error(emptyMessage)
+    var r = Snippets.importText(snippetsStore.doc, text, { now: Date.now() }, backend.snippetDeps)
+    if (r.error) throw new Error(r.error)
+    if (r.added > 0) backend.storeSnippets(r.doc)
+    var parts = [r.added + " imported"]
+    if (r.duplicates) parts.push(r.duplicates + " already saved")
+    if (r.failed.length) parts.push("skipped " + r.failed.join(", "))
+    return { ok: r.added > 0 || r.failed.length === 0, title: parts.join(" · "), added: r.added }
+  }
+
+  function importSnippets(input) {
+    var path = String(input || "").trim()
+    if (path === "~" || path.indexOf("~/") === 0) path = backend.paths.home + path.slice(1)
+    if (path && path.charAt(0) !== "/") throw new Error("Type a full path, starting with / or ~")
+    if (path) return backend.snippetImportSummary(backend.readTextFile(path), path + " is empty")
+    if (pasteProc.running) throw new Error("Still reading the clipboard")
+    backend.paste(false, function(text) {
+      var outcome
+      try { outcome = backend.snippetImportSummary(text, "The clipboard is empty") }
+      catch (e) { outcome = { ok: false, title: String(e.message || e) } }
+      backend.emit("snippets.imported", outcome)
+    })
+    return { pending: true, ok: true, title: "Reading the clipboard…" }
+  }
+
+  // Merges validated keys into config.json, keeping keys this build does
+  // not know (another fork's settings, or a newer build's).
+  function updateConfig(patch) {
+    var raw = {}
+    var text = configFile.loaded ? configFile.text() : ""
+    if (String(text).trim()) {
+      try { raw = JSON.parse(text) } catch (e) { throw new Error("config.json is not valid JSON; fix it by hand first") }
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("config.json must hold an object")
+    }
+    for (var key in patch) {
+      if (Schema.configDefaults[key] === undefined) throw new Error("Unknown setting " + key)
+      if (!Schema.validConfigValue(key, patch[key])) throw new Error("Invalid value for " + key)
+      raw[key] = patch[key]
+    }
+    configFile.setText(JSON.stringify(raw, null, 2) + "\n")
+    backend.config = Schema.withConfigDefaults(raw)
+    return backend.config
+  }
+
+  // Opens the Settings window, optionally on a tab and an item in it.
+  function openSettings(target) {
+    backend.emit("settings.open", target || {})
+    return { close: true }
   }
 
   // ------------------------------------------------------------ quicklinks
@@ -632,7 +737,15 @@ Item {
   function exportQuicklinks() {
     var rows = Quicklinks.exportList(quicklinksStore.doc)
     if (rows.length === 0) return { toast: { style: "failure", title: "No quicklinks to export" } }
+    return backend.exportRows("quicklinks", rows)
+  }
+
+  // Writes ~/Downloads/oma-cast-<kind>-<date>.json, copies it, and reports as
+  // <kind>.exported. kind: "quicklinks" or "snippets".
+  function exportRows(kind, rows) {
     if (exportProc.running) return { toast: { style: "failure", title: "Already exporting" } }
+    exportProc.kind = kind
+    exportProc.command = ["sh", "-c", exportProc.script, "sh", kind]
     exportProc.payload = JSON.stringify(rows, null, 2) + "\n"
     exportProc.count = rows.length
     exportProc.running = true
@@ -731,6 +844,8 @@ Item {
         return settingsStore.doc.general
       },
       getAllCommandSettings: function() { return settingsStore.doc.commands },
+      getConfig: function() { return backend.config },
+      updateConfig: function(data) { return backend.updateConfig(data && typeof data === "object" ? data : {}) },
       getCommandSettings: function(data) { return settingsStore.doc.commands[String(data && data.commandId || "")] || {} },
       updateCommandSettings: function(data) {
         var id = String(data && data.commandId || "")
@@ -760,6 +875,7 @@ Item {
         var sections
         if (view && view.kind === "menu") sections = RootSearch.submenuSections(backend.candidates, view.menuId, query, ctx, backend.deps)
         else if (view && view.kind === "quicklinks") sections = RootSearch.quicklinkSections(backend.candidates, query, ctx, backend.deps)
+        else if (view && view.kind === "snippets") sections = RootSearch.snippetSections(backend.candidates, query, ctx, backend.deps)
         else if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
         else if (view && view.kind === "clipboard-history") sections = Clipboard.sections(clipboardSource.entries, query)
         else if (view && view.kind === "script-menu") {
@@ -862,8 +978,59 @@ Item {
       getDetail: function(data) {
         var rowId = String(data && data.id || "")
         if (rowId.indexOf("clipboard:") === 0) return Clipboard.detail(backend.clipboardEntry(rowId))
+        if (rowId.indexOf("snippet:") === 0) {
+          var snippet = Snippets.get(snippetsStore.doc, rowId.slice("snippet:".length))
+          return snippet ? Snippets.detail(snippet, function(ms) { return RootSearch.relativeTime(ms, Date.now()) }) : null
+        }
         if (rowId.indexOf("script:") === 0) return backend.scriptDetail(rowId)
         return null
+      }
+    })
+
+    // Names from Raycast's snippets namespace (ref 02 §2).
+    Rpc.register(backend.registry, "snippets", {
+      list: function() { return Snippets.list(snippetsStore.doc) },
+      get: function(data) { return Snippets.get(snippetsStore.doc, String(data && data.id || "")) },
+      save: function(data) {
+        var r = Snippets.save(snippetsStore.doc, data || {}, { now: Date.now() }, backend.snippetDeps)
+        if (r.error) throw new Error(r.error)
+        backend.storeSnippets(r.doc)
+        return r.item
+      },
+      update: function(data) {
+        var r = Snippets.update(snippetsStore.doc, String(data && data.id || ""), data || {}, { now: Date.now() }, backend.snippetDeps)
+        if (r.error) throw new Error(r.error)
+        backend.storeSnippets(r.doc)
+        return r.item
+      },
+      "delete": function(data) {
+        var id = String(data && data.id || "")
+        var r = Snippets.remove(snippetsStore.doc, id)
+        if (r.error) throw new Error(r.error)
+        backend.storeSnippets(r.doc)
+        // The row's alias, favourite and ranking go with it.
+        settingsStore.update(function(doc) { delete doc.commands["snippet:" + id] })
+        frecencyStore.update(function(doc) { delete doc.items["snippet:" + id] })
+        return null
+      },
+      importText: function(data) {
+        var r = Snippets.importText(snippetsStore.doc, String(data && data.text || ""), { now: Date.now() }, backend.snippetDeps)
+        if (r.error) throw new Error(r.error)
+        if (r.added > 0) backend.storeSnippets(r.doc)
+        return { added: r.added, duplicates: r.duplicates, failed: r.failed }
+      },
+      exportText: function() { return JSON.stringify(Snippets.exportList(snippetsStore.doc), null, 2) },
+      // {path?}: a JSON file, or the clipboard when empty; as quicklinks.import.
+      "import": function(data) { return backend.importSnippets(data && data.path) },
+      "export": function() {
+        var rows = Snippets.exportList(snippetsStore.doc)
+        if (rows.length === 0) return { toast: { style: "failure", title: "No snippets to export" } }
+        return backend.exportRows("snippets", rows)
+      },
+      // Checks a draft without saving it (the Settings editor shows the error).
+      check: function(data) {
+        var r = Snippets.validate(snippetsStore.doc, data || {}, String(data && data.id || ""), backend.snippetDeps)
+        return r.error
       }
     })
 
@@ -977,7 +1144,7 @@ Item {
     function onValuesChanged() { rebuildTimer.restart() }
   }
 
-  Component.onDestruction: { settingsStore.flush(); frecencyStore.flush(); calculatorStore.flush(); emojiStore.flush(); quicklinksStore.flush() }
+  Component.onDestruction: { settingsStore.flush(); frecencyStore.flush(); calculatorStore.flush(); emojiStore.flush(); quicklinksStore.flush(); snippetsStore.flush() }
   onNotification: function(method, data) {
     if (method === "window.visibilityChanged" && data && data.visible) {
       menuSource.refresh()
@@ -1056,6 +1223,19 @@ Item {
     id: scriptRunner
   }
 
+  TextPaster {
+    id: textPaster
+  }
+
+  JsonStore {
+    id: snippetsStore
+    ready: backend.directoriesReady
+    path: backend.paths.db + "/" + Schema.documents.snippets.file
+    migrations: Schema.documents.snippets.migrations
+    onMessage: function(level, text, metadata) { backend.log(level, "store", text, metadata) }
+  }
+  Connections { target: snippetsStore; function onChanged() { backend.storeRevision++; rebuildTimer.restart() } }
+
   CalculatorData {
     id: calculatorData
     cacheDir: backend.directoriesReady ? backend.paths.cache : ""
@@ -1091,8 +1271,9 @@ Item {
     id: exportProc
     property string payload: ""
     property int count: 0
+    property string kind: "quicklinks"
+    readonly property string script: "d=$(xdg-user-dir DOWNLOAD 2>/dev/null); [ -d \"$d\" ] || d=$HOME; f=\"$d/oma-cast-$1-$(date +%F).json\"; cat > \"$f\" && wl-copy --type text/plain < \"$f\" && printf %s \"$f\""
     stdinEnabled: true
-    command: ["sh", "-c", "d=$(xdg-user-dir DOWNLOAD 2>/dev/null); [ -d \"$d\" ] || d=$HOME; f=\"$d/oma-cast-quicklinks-$(date +%F).json\"; cat > \"$f\" && wl-copy --type text/plain < \"$f\" && printf %s \"$f\""]
     property string path: ""
     property string errors: ""
     stdout: SplitParser { onRead: function(line) { exportProc.path = line } }
@@ -1101,8 +1282,9 @@ Item {
     onExited: function(exitCode) {
       exportProc.stdinEnabled = true
       var where = exportProc.path.replace(backend.paths.home, "~")
-      backend.emit("quicklinks.exported", exitCode === 0
-        ? { ok: true, title: "Exported " + exportProc.count + (exportProc.count === 1 ? " quicklink" : " quicklinks") + " to " + where + " and the clipboard" }
+      var noun = exportProc.kind === "snippets" ? "snippet" : "quicklink"
+      backend.emit(exportProc.kind + ".exported", exitCode === 0
+        ? { ok: true, title: "Exported " + exportProc.count + " " + noun + (exportProc.count === 1 ? "" : "s") + " to " + where + " and the clipboard" }
         : { ok: false, title: "Export failed: " + (exportProc.errors || "exit " + exitCode) })
       exportProc.path = ""
       exportProc.errors = ""
@@ -1127,11 +1309,15 @@ Item {
   Connections { target: emojiStore; function onChanged() { backend.storeRevision++ } }
 
   FileView {
+    id: configFile
+    property bool loaded: false
     path: backend.directoriesReady ? backend.paths.configFile : ""
+    atomicWrites: true
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
+      configFile.loaded = true
       try {
         backend.config = Schema.withConfigDefaults(JSON.parse(text()))
       } catch (e) {
@@ -1139,6 +1325,6 @@ Item {
         backend.log("warning", "config", "ignoring unreadable " + path + ": " + e)
       }
     }
-    onLoadFailed: backend.config = Schema.withConfigDefaults(null)
+    onLoadFailed: { configFile.loaded = false; backend.config = Schema.withConfigDefaults(null) }
   }
 }

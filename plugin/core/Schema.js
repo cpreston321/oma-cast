@@ -71,6 +71,19 @@ var quicklinksMigrations = [
   }
 ]
 
+// Saved snippets (fork, SPEC §8.3): items [{id, name, text, keyword,
+// createdAt, updatedAt}], in the shape Snippets.js reads.
+var snippetsMigrations = [
+  {
+    version: 1,
+    name: "snippets",
+    up: function(doc) {
+      doc.items = Array.isArray(doc.items) ? doc.items : []
+      return doc
+    }
+  }
+]
+
 var SEARCH_HISTORY_LIMIT = 20
 
 function pushSearchHistory(history, query) {
@@ -87,7 +100,8 @@ var documents = {
   frecency: { file: "frecency.json", migrations: frecencyMigrations },
   calculator: { file: "calculator.json", migrations: calculatorMigrations },
   emoji: { file: "emoji.json", migrations: emojiMigrations },
-  quicklinks: { file: "quicklinks.json", migrations: quicklinksMigrations }
+  quicklinks: { file: "quicklinks.json", migrations: quicklinksMigrations },
+  snippets: { file: "snippets.json", migrations: snippetsMigrations }
 }
 
 var configDefaults = {
@@ -140,6 +154,7 @@ if (typeof module !== "undefined") {
     quicklinksMigrations: quicklinksMigrations,
     calculatorMigrations: calculatorMigrations,
     emojiMigrations: emojiMigrations,
+    snippetsMigrations: snippetsMigrations,
     pushSearchHistory: pushSearchHistory,
     SEARCH_HISTORY_LIMIT: SEARCH_HISTORY_LIMIT,
     documents: documents,

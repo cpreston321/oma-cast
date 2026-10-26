@@ -83,7 +83,7 @@ PanelWindow {
   // Clipboard History and script menus with previews show the selected row
   // beside the list.
   property bool rowsHaveDetail: false
-  readonly property bool detailVisible: !window.editor && (window.view.kind === "clipboard-history" || (window.view.kind === "script-menu" && window.rowsHaveDetail))
+  readonly property bool detailVisible: !window.editor && (window.view.kind === "clipboard-history" || window.view.kind === "snippets" || (window.view.kind === "script-menu" && window.rowsHaveDetail))
   readonly property var detail: {
     window.backend.detailRevision
     if (!window.detailVisible || !window.selectedRow) return null
@@ -114,6 +114,7 @@ PanelWindow {
     if (window.pickingApp) return "Search apps…"
     if (window.focusedField) return window.focusedField.placeholder || window.focusedField.label
     if (kind === "quicklinks") return "Search quicklinks…"
+    if (kind === "snippets") return "Search snippets…"
     if (kind === "menu" || kind === "script-menu") return "Search " + window.view.title + "…"
     if (kind === "calculator-history") return "Search calculations…"
     if (kind === "emoji") return "Search emoji…"
@@ -843,6 +844,8 @@ PanelWindow {
     if (ctrl && (key === Qt.Key_Plus || key === Qt.Key_Equal)) { window.setZoom(window.zoom + 0.1); return true }
     if (ctrl && key === Qt.Key_Minus) { window.setZoom(window.zoom - 0.1); return true }
     if (ctrl && key === Qt.Key_0) { window.setZoom(1); return true }
+    // Ctrl+, opens Settings, as in Raycast.
+    if (ctrl && key === Qt.Key_Comma) { window.request({ id: "builtin:settings", action: "open", query: "" }); return true }
     if (ctrl && key === Qt.Key_BracketLeft) { window.closePopups(); window.pop(); return true }
     // Ctrl+V, Ctrl+Shift+V (the terminal habit) and Shift+Insert paste.
     var meta = (event.modifiers & Qt.MetaModifier) !== 0
@@ -900,8 +903,8 @@ PanelWindow {
       if (ctrl && shift && key === Qt.Key_F) { window.performIfOffered(["favorite-add", "favorite-remove"]); return true }
       if (ctrl && shift && key === Qt.Key_C) { window.performIfOffered(["copy-command", "copy-id", "copy-question-answer", "copy-link"]); return true }
       if (ctrl && shift && key === Qt.Key_D) { window.performIfOffered(["delete-all-entries"]); return true }
-      if (ctrl && key === Qt.Key_D) { window.performIfOffered(["delete-entry", "delete-quicklink"]); return true }
-      if (ctrl && !shift && key === Qt.Key_E && window.performIfOffered(["edit-quicklink"])) return true
+      if (ctrl && key === Qt.Key_D) { window.performIfOffered(["delete-entry", "delete-quicklink", "delete-snippet"]); return true }
+      if (ctrl && !shift && key === Qt.Key_E && window.performIfOffered(["edit-quicklink", "edit-snippet"])) return true
       if (alt && shift && key === Qt.Key_D) { window.performIfOffered(["disable"]); return true }
       if (ctrl && key >= Qt.Key_1 && key <= Qt.Key_9) {
         var target = window.nthItem(key - Qt.Key_0)
@@ -1374,6 +1377,7 @@ PanelWindow {
           text: window.editor ? window.view.title
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
             : window.view.kind === "quicklinks" && !window.query ? "No Quicklinks Yet"
+            : window.view.kind === "snippets" && !window.query ? "No Snippets Yet"
             : window.view.kind === "clipboard-history" && !window.query ? "Clipboard Is Empty"
             : window.view.kind === "script-menu" && window.backend.loading ? "Loading…"
             : window.emojiView && window.query ? "No Emoji Found"
@@ -1392,6 +1396,7 @@ PanelWindow {
               case "quicklink-import": return "Reads a JSON array of {name, link} rows, as Raycast exports them. Rows already saved are skipped."
               case "calculator-history": return window.query ? "" : "Type a calculation in the root search, then copy or paste the answer."
               case "quicklinks": return window.query ? "" : "Run Create Quicklink, or type a web address in the root search."
+              case "snippets": return window.query ? "" : "Run Create Snippet to write one in Settings."
               case "clipboard-history": return window.query ? "" : "Copy something and it shows up here."
             }
             return ""

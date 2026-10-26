@@ -52,6 +52,36 @@ SettingsPage {
     }
     SettingRow {
       look: page.look
+      label: "Launcher size (px)"
+      description: "Width × height at 100% text size. It never grows past the screen."
+      Row {
+        spacing: Style.space(8)
+        NumberField {
+          from: 500
+          to: 3000
+          stepSize: 25
+          value: page.general.windowWidth || 750
+          onModified: function(v) { page.setGeneral({ windowWidth: v }) }
+        }
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: "×"
+          color: page.look.muted
+          font.family: page.look.fontFamily
+          font.pixelSize: Style.font.body
+        }
+        NumberField {
+          from: 300
+          to: 2000
+          stepSize: 25
+          value: page.general.windowHeight || 475
+          onModified: function(v) { page.setGeneral({ windowHeight: v }) }
+        }
+      }
+    }
+    SettingRow {
+      look: page.look
       label: "Escape key"
       description: "What Esc does once the search field is empty."
       Dropdown {

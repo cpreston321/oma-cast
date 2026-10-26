@@ -129,6 +129,7 @@ Works:
   - A launch from root clears the query [I].
   - A row is selected on hover only after a real pointer move (Omarchy's PointerMoveGate).
   - No compositor fade, like Omarchy's own overlays. The plugin adds a Hyprland layer rule for the `oma-cast` namespace (`hyprctl eval`) on load and after each `configreloaded`. Without it the launcher fades out for about 150 ms after hiding, and a screenshot launched from it captures the fading launcher.
+  - Card size is configurable: the `windowWidth`/`windowHeight` general settings (default 750×475 px at uiZoom 1, ranges 500–3000 × 300–2000) set it, for example `oma-cast call settings.updateGeneralSettings '{"windowWidth":1000,"windowHeight":650}'`. Unlike `uiZoom`, they don't scale the text. Settings added after migration v1 are filled in on read by `Schema.withGeneralDefaults`, so they need no migration [D]. Settings → General has them too.
 - **Calculator** (`core/Calculator.js`, our own engine [D]; no `qalc`/fend dependency): a "Calculator" section above Results with Raycast's two-pane card (question → answer, captions below each). It handles:
   - arithmetic and functions
   - Soulver-style percentages (`$30 + 20%`, `20% off 50`, `50 as a % of 200`)

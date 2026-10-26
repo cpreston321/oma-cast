@@ -49,7 +49,7 @@ PanelWindow {
   readonly property var general: {
     window.backend.storeRevision
     var r = window.backend.ready ? window.backend.callSync("settings.getGeneralSettings", null) : null
-    return r && r.ok ? r.data : ({ uiZoom: 1, windowMode: "expanded", escapeKeyBehavior: "pop-back-or-close", popToRootTimeout: 90, navigationBindings: "emacs" })
+    return r && r.ok ? r.data : ({ uiZoom: 1, windowMode: "expanded", escapeKeyBehavior: "pop-back-or-close", popToRootTimeout: 90, navigationBindings: "emacs", windowWidth: 750, windowHeight: 475 })
   }
   readonly property real zoom: window.general.uiZoom > 0 ? window.general.uiZoom : 1
   function px(value) { return Math.round(Style.space(value) * window.zoom) }
@@ -146,8 +146,10 @@ PanelWindow {
     return "Search for apps and commands…"
   }
 
-  readonly property int cardWidth: Math.min(px(750), width - Style.gapsOut * 2)
-  readonly property int fullHeight: Math.min(px(475), height - Style.gapsOut * 2)
+  // Card size in px at uiZoom 1; zoom scales it with the text, and it never
+  // grows past the screen.
+  readonly property int cardWidth: Math.min(px(window.general.windowWidth > 0 ? window.general.windowWidth : 750), width - Style.gapsOut * 2)
+  readonly property int fullHeight: Math.min(px(window.general.windowHeight > 0 ? window.general.windowHeight : 475), height - Style.gapsOut * 2)
   readonly property int headerHeight: px(66)
   readonly property int footerHeight: px(42)
 

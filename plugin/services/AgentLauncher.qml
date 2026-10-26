@@ -7,12 +7,21 @@ Item {
   property bool checking: false
   property var pendingArgv: null
   property string output: ""
+  // Fork: {agent, cwd, runtime} for the next start() (Agent.launchCommand).
+  property var options: null
   signal prepared(var argv)
   signal failed(string message)
 
+  // Ask a chosen agent, or start in a chosen folder.
+  function startWith(query, opts) {
+    service.options = opts || null
+    try { service.start(query) } finally { service.options = null }
+  }
+
   function start(query) {
-    var argv = Agent.launchArgv(query)
+    var argv = Agent.launchCommand(query, service.options)
     if (service.checking) throw new Error("Agent launch is already being checked")
+    check.command = ["bash", "-lc", Agent.CHECK_SCRIPT, "bash", (service.options && service.options.agent) || ""]
     service.pendingArgv = argv
     service.output = ""
     service.checking = true

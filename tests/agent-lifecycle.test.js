@@ -73,7 +73,7 @@ test("failure, crash and timeout never prepare a terminal launch", () => {
   assert.deepEqual(h.events, [{ message: "Agent launch check timed out. Try again." }])
 })
 
-test("showing refreshes calculator data and script menus, and hiding cancels an agent hand-off", () => {
+test("showing refreshes calculator data, script menus and agents, and hiding cancels an agent hand-off", () => {
   const text = fs.readFileSync(path.join(__dirname, "../plugin/Backend.qml"), "utf8")
   const events = []
   const context = vm.createContext({
@@ -82,20 +82,20 @@ test("showing refreshes calculator data and script menus, and hiding cancels an 
     keybindingsSource: { refresh: () => events.push("keybindings") },
     calculatorData: { refresh: () => events.push("calculator") },
     agentLauncher: { cancel: () => events.push("cancel") },
-    backend: { refreshScriptMenus: () => events.push("scripts") }
+    backend: { refreshScriptMenus: () => events.push("scripts"), refreshAgents: () => events.push("agents") }
   })
   const notify = body(text, "onNotification: function(method, data)", 2)
   vm.runInContext(notify, context)
-  assert.deepEqual(events, ["menu", "calculator", "scripts", "keybindings"])
+  assert.deepEqual(events, ["menu", "calculator", "scripts", "keybindings", "agents"])
   context.data = { visible: false }
   vm.runInContext(notify, context)
-  assert.deepEqual(events, ["menu", "calculator", "scripts", "keybindings", "cancel"])
+  assert.deepEqual(events, ["menu", "calculator", "scripts", "keybindings", "agents", "cancel"])
   context.data = null
   vm.runInContext(notify, context)
   context.method = "calculator.historyStateChanged"
   context.data = { visible: true }
   vm.runInContext(notify, context)
-  assert.equal(events.length, 5)
+  assert.equal(events.length, 6)
 })
 
 test("entry point dismisses and clears the launcher before starting the terminal", () => {
@@ -104,15 +104,26 @@ test("entry point dismisses and clears the launcher before starting the terminal
   const argv = Agent.launchArgv("Question")
   const context = vm.createContext({
     method: "agent.launchReady", data: { argv },
-    root: { hide: () => events.push("hide") },
-    launcher: { popToRoot: () => events.push("clear") },
+    root: { opened: true, hide: () => events.push("hide"), show: () => events.push("show") },
+    launcher: { popToRoot: () => events.push("clear"), push: view => events.push(view.kind), hud: text => events.push("hud " + text) },
     Util: { execArgv: value => events.push(value) }
   })
-  vm.runInContext(body(text, "function onNotification(method, data)", 4), context)
+  const notify = body(text, "function onNotification(method, data)", 4)
+  vm.runInContext(notify, context)
   assert.deepEqual(events, ["hide", "clear", argv])
+  // Open, the launcher shows the failure as a toast; closed, as a HUD.
   context.method = "agent.launchFailed"
-  vm.runInContext(body(text, "function onNotification(method, data)", 4), context)
+  context.data = { message: "Select some text first" }
+  vm.runInContext(notify, context)
   assert.equal(events.length, 3)
+  context.root.opened = false
+  vm.runInContext(notify, context)
+  assert.deepEqual(events.slice(3), ["hud Select some text first"])
+  // A question view that arrives later opens the launcher first.
+  context.method = "agent.push"
+  context.data = { kind: "agent-question" }
+  vm.runInContext(notify, context)
+  assert.deepEqual(events.slice(4), ["show", "clear", "agent-question"])
 })
 
 test("agent shortcut is limited to root search and preserves normal Enter actions", () => {

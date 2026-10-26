@@ -87,6 +87,27 @@ var BUILTINS = [
   { id: "builtin:search-snippets", title: "Search Snippets", subtitle: "Snippets", keywords: ["snippet", "text", "template", "paste"], glyph: "\uf121", run: { push: { kind: "snippets", title: "Search Snippets" } } },
   { id: "builtin:create-snippet", title: "Create Snippet", subtitle: "Snippets", keywords: ["snippet", "text", "template", "new"], glyph: "\uf121", run: { settings: { tab: "snippets", snippetId: "new" } } },
   { id: "builtin:settings", title: "oma-cast Settings", subtitle: "oma-cast", keywords: ["settings", "preferences", "config", "aliases", "options"], glyph: "\uf013", run: { settings: { tab: "general" } }, rootSearch: { when: "always" } },
+  // Hand-offs to your agent (fork): the question opens a new terminal
+  // session, as the "Ask default agent" fallback does.
+  {
+    id: "builtin:ask-agent",
+    title: "Ask Agent",
+    subtitle: "AI",
+    glyph: "\u{f06a9}",                 // nf-md-robot
+    keywords: ["ai", "agent", "ask", "chat", "question", "claude", "codex", "llm", "assistant"],
+    arguments: [{ name: "question", placeholder: "Question", required: true }],
+    run: { agent: "ask" },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:ask-selection",
+    title: "Ask About Selection",
+    subtitle: "AI",
+    glyph: "\u{f06a9}",
+    keywords: ["ai", "agent", "ask", "selection", "selected", "explain", "text"],
+    run: { agent: "selection" },
+    rootSearch: { when: "always" }
+  },
   {
     id: "builtin:search-files",
     title: "Search Files",
@@ -274,6 +295,18 @@ function urlRows(url) {
 // "Use <query> with…" rows. order: the fallbacks setting (ids, or
 // "quicklink:<id>"); quicklinks: {id: name} for the saved ones. Without an
 // order, the built-in three.
+// The "?" quick trigger [D]: one row per installed agent, the default first.
+// agents: [{id, name, isDefault}]; question may be "" (rows say what to type).
+function agentRows(question, agents) {
+  return (agents || []).map(function(a) {
+    return { candidate: {
+      id: "agent-ask:" + a.id, type: "command", kind: "agent-ask", agentId: a.id,
+      title: "Ask " + a.name, subtitle: question || "Type a question",
+      typeLabel: a.isDefault ? "Default Agent" : "Agent", glyph: "\u{f06a9}", rootSearch: { when: "searching" }
+    }, record: null }
+  })
+}
+
 function fallbackRows(query, order, quicklinks) {
   var ids = Array.isArray(order) ? order : FALLBACKS.map(function(f) { return f.id })
   var out = []
@@ -384,6 +417,9 @@ function rootSections(candidates, query, ctx, deps) {
     decorated.push(decorate(candidates[i], ctx, deps))
   }
   var opts = rankOptions(ctx)
+
+  if (typeof ctx.agentQuestion === "string" && ctx.agents && ctx.agents.length)
+    return [{ id: "ask", title: "Ask", rows: agentRows(ctx.agentQuestion, ctx.agents) }]
 
   if (q) {
     var searchable = decorated.filter(function(c) { return c.rootSearch.when !== "empty" })
@@ -499,7 +535,7 @@ function actionsFor(candidate, prefs) {
   var list = baseActions(candidate)
   if (candidate.kind === "emoji") return preferPrimary(list, "paste", "copy", p.emoji === "copy")
   if (candidate.kind === "clipboard") return preferPrimary(list, "paste", "copy", p.clipboard === "copy")
-  if (candidate.kind === "snippet") return preferPrimary(list, "paste-snippet", "copy-snippet", p.snippet === "copy")
+  if (candidate.kind === "snippet" && !candidate.agentCommand) return preferPrimary(list, "paste-snippet", "copy-snippet", p.snippet === "copy")
   if (candidate.kind === "calculator" || candidate.kind === "calculator-history")
     return preferPrimary(list, "paste-answer", "copy-answer", p.calculator !== "paste")
   return list
@@ -517,9 +553,13 @@ function baseActions(candidate) {
     return [
       { id: "paste", title: "Paste", shortcut: "↵", section: "primary", icon: "" },
       { id: "copy", title: "Copy to Clipboard", shortcut: "Ctrl ↵", section: "primary", icon: "" },
-      { id: "open-entry", title: "Open", shortcut: "Ctrl Shift ↵", section: "primary", icon: "" }
+      { id: "open-entry", title: "Open", shortcut: "Ctrl Shift ↵", section: "primary", icon: "" },
+      ASK_ABOUT
     ]
   }
+  if (candidate.kind === "agent-ask") return [
+    { id: "open", title: candidate.title, shortcut: "↵", section: "primary", icon: "" }
+  ]
   if (candidate.kind === "calculator" || candidate.kind === "calculator-history") {
     // ↵ copies, Ctrl ↵ pastes (SPEC §8 Calculator) [O]; delete keys are
     // the Windows `clear` shortcuts (ref 04 §2.8).
@@ -547,7 +587,9 @@ function baseActions(candidate) {
     case "omarchy-menu":
     case "omarchy-link": primary = { id: "open", title: "Open Menu", icon: "" }; break
     case "quicklink": primary = { id: "open", title: "Open Quicklink", icon: "" }; break
-    case "snippet": primary = { id: "paste-snippet", title: "Paste Snippet", icon: "\uf0ea" }; break
+    case "snippet": primary = candidate.agentCommand
+      ? { id: "paste-snippet", title: "Send to Agent", icon: "\u{f06a9}" }
+      : { id: "paste-snippet", title: "Paste Snippet", icon: "\uf0ea" }; break
     case "url-open":
     case "url-create": primary = { id: "open", title: candidate.title, icon: "" }; break
     case "fallback": primary = { id: "open", title: candidate.title, icon: "" }; break
@@ -568,7 +610,8 @@ function baseActions(candidate) {
     list.push({ id: "copy-link", title: "Copy Link", shortcut: "Ctrl Shift C", section: "copy", icon: "" })
   }
   if (candidate.kind === "snippet") {
-    list.push({ id: "copy-snippet", title: "Copy to Clipboard", shortcut: "Ctrl ↵", section: "primary", icon: "\uf0c5" })
+    if (!candidate.usesSelection)
+      list.push({ id: "copy-snippet", title: candidate.agentCommand ? "Copy Prompt" : "Copy to Clipboard", shortcut: "Ctrl ↵", section: "primary", icon: "\uf0c5" })
     list.push({ id: "edit-snippet", title: "Edit Snippet", shortcut: "Ctrl E", section: "primary", icon: "\uf044" })
   }
   if (candidate.kind === "omarchy-action") list.push({ id: "copy-command", title: "Copy Command", shortcut: "Ctrl Shift C", section: "copy", icon: "" })
@@ -589,6 +632,9 @@ function baseActions(candidate) {
   return list
 }
 
+// Opens a question about the row (its text, or a file's path) for your agent.
+var ASK_ABOUT = { id: "ask-agent", title: "Ask Agent About This", shortcut: "", section: "agent", icon: "\u{f06a9}" }
+
 // Files and folders [D]: no favourites, aliases or disabling, since a row
 // lives only as long as the query that found it.
 function fileActions(candidate) {
@@ -597,7 +643,8 @@ function fileActions(candidate) {
     { id: "open", title: folder ? "Open Folder" : "Open File", shortcut: "↵", section: "primary", icon: "" },
     { id: "reveal", title: "Show in Files", shortcut: "Ctrl ↵", section: "primary", icon: "" },
     { id: "open-terminal", title: folder ? "Open in Terminal" : "Open Folder in Terminal", shortcut: "Ctrl Shift ↵", section: "primary", icon: "" },
-    { id: "copy-path", title: "Copy Path", shortcut: "Ctrl Shift C", section: "copy", icon: "" }
+    { id: "copy-path", title: "Copy Path", shortcut: "Ctrl Shift C", section: "copy", icon: "" },
+    ASK_ABOUT
   ]
 }
 
@@ -713,6 +760,7 @@ if (typeof module !== "undefined") {
     historySections: historySections,
     decorate: decorate,
     rootSections: rootSections,
+    agentRows: agentRows,
     submenuSections: submenuSections,
     quicklinkSections: quicklinkSections,
     snippetSections: snippetSections,

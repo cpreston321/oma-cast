@@ -170,7 +170,7 @@ PanelWindow {
   // Editor views (alias, quicklink form, import, a script menu's input prompt)
   // take the header text as input instead of searching; a form edits its
   // focused field there.
-  readonly property bool editor: ["alias", "script-input", "quicklink-form", "quicklink-import"].indexOf(window.view.kind) >= 0
+  readonly property bool editor: ["alias", "script-input", "quicklink-form", "quicklink-import", "agent-question"].indexOf(window.view.kind) >= 0
   readonly property bool formActive: window.view.kind === "quicklink-form"
   readonly property var focusedField: window.formActive ? window.view.fields[window.view.focus] : null
   // The Open With field filters installed apps instead of taking text.
@@ -180,6 +180,7 @@ PanelWindow {
     if (kind === "alias") return "Type an alias, then press ↵"
     if (kind === "keybindings") return window.backend.keybindingText("placeholder")
     if (kind === "script-input") return window.view.title + "…"
+    if (kind === "agent-question") return "Ask about this, or ↵ to have it explained…"
     if (kind === "quicklink-import") return "Path to a JSON file, or ↵ to import the clipboard"
     if (window.pickingApp) return "Search apps…"
     if (window.focusedField) return window.focusedField.placeholder || window.focusedField.label
@@ -263,7 +264,7 @@ PanelWindow {
     var saved = window.stack.slice()
     saved[saved.length - 1] = Object.assign({}, window.view, { query: window.query, selectedIndex: window.selectedIndex })
     window.stack = saved.concat([next])
-    window.query = next.kind === "alias" || next.kind === "script-input" ? (next.value || "") : (next.fields ? window.fieldText(next.fields[0]) : "")
+    window.query = next.kind === "alias" || next.kind === "script-input" || next.kind === "agent-question" ? (next.value || "") : (next.fields ? window.fieldText(next.fields[0]) : "")
     window.rebuild(true)
   }
 
@@ -793,6 +794,10 @@ PanelWindow {
       if (enter) { window.submitInput(); return true }
       return false
     }
+    if (kind === "agent-question") {
+      if (enter) { window.submitAgentQuestion(); return true }
+      return false
+    }
     var focus = window.view.focus
     var last = window.view.fields.length - 1
     if (enter && ctrl) { window.saveQuicklink(); return true }
@@ -831,6 +836,14 @@ PanelWindow {
     var r = window.backend.callSync("scriptMenu.submitInput", { rowId: window.view.rowId, actionId: window.view.actionId, input: window.query })
     if (!r.ok) { window.showToast("failure", r.error); return }
     window.pop()
+    window.handleOutcome(r.data || {}, null)
+  }
+
+  // ↵ in Ask Agent About This: the question and what it is about go to the
+  // agent; the launcher hides once the hand-off is ready (agent.launchReady).
+  function submitAgentQuestion() {
+    var r = window.backend.callSync("agent.ask", { question: window.query, context: window.view.context, cwd: window.view.cwd })
+    if (!r.ok) { window.showToast("failure", r.error); return }
     window.handleOutcome(r.data || {}, null)
   }
 
@@ -1057,7 +1070,7 @@ PanelWindow {
     function onCandidatesRevisionChanged() { if (window.shown && !window.actionPanelOpen && !window.alert && (!window.editor || window.pickingApp)) window.rebuild(false) }
     function onViewRevisionChanged() { if (window.shown && !window.atRoot && !window.editor && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
     function onNotification(method, data) {
-      if (method === "agent.launchFailed" && window.shown) window.showToast("failure", data.message)
+      if ((method === "agent.launchFailed" || method === "agent.usageFailed") && window.shown) window.showToast("failure", data.message)
       // A script menu command finished (Backend.runScriptPlan).
       if (method === "script.finished") {
         if (data.close) {
@@ -1531,7 +1544,7 @@ PanelWindow {
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.editor ? "" : ""
+          text: window.view.kind === "agent-question" ? "\u{f06a9}" : window.editor ? "" : ""
           color: window.look.accent
           font.family: window.editor ? window.look.fontFamily : "omarchy"
           font.pixelSize: window.px(28)
@@ -1554,11 +1567,17 @@ PanelWindow {
         }
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
+          width: Math.min(implicitWidth, window.cardWidth - window.px(80))
+          wrapMode: Text.Wrap
+          horizontalAlignment: Text.AlignHCenter
+          maximumLineCount: 6
+          elide: Text.ElideRight
           textFormat: Text.PlainText
           text: {
             switch (window.view.kind) {
               case "alias": return "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
               case "script-input": return "Press ↵ to continue, Esc to cancel."
+              case "agent-question": return window.view.preview + "\n\n↵ opens a session with your agent. Esc to cancel."
               case "quicklink-import": return "Reads a JSON array of {name, link} rows, as Raycast exports them. Rows already saved are skipped."
               case "calculator-history": return window.query ? "" : "Type a calculation in the root search, then copy or paste the answer."
               case "quicklinks": return window.query ? "" : "Run Create Quicklink, or type a web address in the root search."
@@ -1642,6 +1661,7 @@ PanelWindow {
           window.backend.storeRevision
           if (window.view.kind === "alias") return { title: "Save Alias", shortcut: "↵" }
           if (window.view.kind === "script-input") return { title: "Continue", shortcut: "↵" }
+          if (window.view.kind === "agent-question") return { title: "Ask Agent", shortcut: "↵" }
           if (window.pickingApp) return { title: window.pickedSelected ? "Save Quicklink" : "Select App", shortcut: "↵" }
           if (window.formActive) return { title: window.view.focus >= window.view.fields.length - 1 ? "Save Quicklink" : "Next Field", shortcut: "↵" }
           if (window.view.kind === "quicklink-import") return { title: window.query ? "Import File" : "Import Clipboard", shortcut: "↵" }

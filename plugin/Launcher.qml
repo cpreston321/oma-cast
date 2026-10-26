@@ -87,6 +87,14 @@ Item {
     target: backend
     function onNotification(method, data) {
       if (method === "settings.open") { root.openSettings(data); return }
+      // Ask About Selection reads the selection first, so its view arrives
+      // later, maybe from `oma-cast run` with the launcher closed.
+      if (method === "agent.push") {
+        if (!root.opened) { root.show(); launcher.popToRoot() }
+        launcher.push(data)
+        return
+      }
+      if (method === "agent.launchFailed" && !root.opened) { launcher.hud(data.message); return }
       if (method !== "agent.launchReady") return
       root.hide()
       launcher.popToRoot()

@@ -82,6 +82,28 @@ read credentials, or make model API calls. Successful preflight checks establish
 launch prerequisites, not successful sign-in or a running terminal; those still
 need live desktop validation.
 
+More ways to ask (fork). Each one still opens a terminal session with the agent;
+nothing is answered inside oma-cast:
+
+* **`?` then a space and your question** lists one **Ask** row per installed
+  agent, your default first. Settings → AI changes the prefix or turns it off.
+* **Ask Agent** takes the question in a pill, so it can have its own hotkey or
+  alias. **Ask About Selection** asks about the text you had selected in the app
+  you came from.
+* **Ctrl+K → Ask Agent About This** on a clipboard entry (its text, or an image's
+  file) or a file or folder (the session starts in its folder).
+* **Ctrl+K** on **Ask default agent** asks one of your other agents instead,
+  for that question only; your default stays as it is.
+* **AI Commands**: a snippet with *Send to your agent instead of pasting* turned
+  on. ↵ fills its placeholders, including `{selection}`, and sends the text to
+  your agent.
+
+An agent counts as installed when Omarchy has installed it (its
+install-on-first-use wrapper alone doesn't count). Settings → AI also picks the
+default agent (saved where `omarchy-default-agent` saves it, without starting a
+session), shows each agent's plan usage from Omarchy's usage records, and sets
+the folder sessions start in.
+
 ## Emoji, clipboard history and window layouts
 
 Ported from [omalaunch](https://github.com/cpreston321/omalaunch). Each one is a
@@ -145,7 +167,7 @@ dates, time zones, bases and percentages work too. ↵ copies the answer.
 ## Settings
 
 **oma-cast Settings** in root search, `Ctrl+,` in the launcher, or
-`oma-cast settings [tab]`. `Ctrl+1`…`8` switch tabs, `Ctrl+S` saves, `Esc`
+`oma-cast settings [tab]`. `Ctrl+1`…`9` switch tabs, `Ctrl+S` saves, `Esc`
 closes.
 
 | Tab | What's in it |
@@ -153,9 +175,10 @@ closes.
 | General | Launcher hotkey, which monitor it opens on, window mode, favorites in compact mode, text size, size, Esc, return-to-root delay, navigation keys |
 | Search | Sensitivity, Suggestions count, keybindings and files in root search, folders/exclusions/hidden files for file search, and the "Use <query> with…" fallbacks (reorder them, remove them, add any quicklink) |
 | Commands | Every command's alias, hotkey and on/off switch |
-| Snippets, Quicklinks | Editors, import and export |
+| Snippets, Quicklinks | Editors, import and export; a snippet can be an AI Command |
 | Paste & Copy | Whether ↵ pastes or copies for clipboard, emoji, snippets and calculator answers; list sizes |
 | Calculator | Currency rates, clock format, rem size, work-day hours, history |
+| AI | Default agent, plan usage, the `?` ask prefix, the folder sessions start in |
 | Data | Clear search history, reset rankings, clear emoji recents, back up and restore everything, log level |
 
 **Hotkeys** go in `~/.config/hypr/oma-cast.lua`, which Settings rewrites and

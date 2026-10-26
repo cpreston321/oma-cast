@@ -306,8 +306,94 @@ Item {
       case "open-entry":
         Util.execArgv(Clipboard.openArgv(entry))
         return { close: true }
+      case "ask-agent":
+        if (entry.kind === "text") return backend.askAbout({ kind: "text", text: entry.text }, "")
+        var files = entry.paths.length ? entry.paths : [entry.path]
+        return backend.askAbout({ kind: "file", path: files.join("\n") }, "")
     }
     throw new Error("Unknown action " + action)
+  }
+
+  // --------------------------------------------------------------- agents
+
+  // Installed agents and the default (Agent.AGENTS_SCRIPT), and Omarchy's
+  // usage records by agent id; refreshed as the launcher opens.
+  property var agentInfo: ({ installed: [], defaultAgent: "" })
+  property var agentUsage: ({})
+  property int agentRevision: 0
+
+  // [{id, name, isDefault, usage}], the default first.
+  function agentList() {
+    var info = backend.agentInfo
+    var ids = info.installed.slice()
+    var at = ids.indexOf(info.defaultAgent)
+    if (at > 0) ids.unshift(ids.splice(at, 1)[0])
+    return ids.map(function(id) {
+      return { id: id, name: Agent.agentName(id), isDefault: id === info.defaultAgent, usage: Agent.usageSummary(backend.agentUsage[id]) }
+    })
+  }
+
+  function refreshAgents() {
+    if (!agentsProc.running) { agentsProc.collected = ""; agentsProc.running = true }
+    if (!usageProc.running) { usageProc.collected = ({}); usageProc.running = true }
+  }
+
+  // Where sessions start: the setting, with ~ expanded; "" lets Omarchy pick.
+  function agentDirectory() {
+    var dir = String(backend.general.agentDirectory || "").trim()
+    if (dir === "~" || dir.indexOf("~/") === 0) dir = backend.paths.home + dir.slice(1)
+    return dir
+  }
+
+  // Starts the hand-off; the launcher hides on agent.launchReady.
+  // opts: {agent, cwd}. The default agent runs through Omarchy's plain path.
+  function askAgent(prompt, opts) {
+    var o = opts || {}
+    var agent = o.agent && o.agent !== backend.agentInfo.defaultAgent ? String(o.agent) : ""
+    agentLauncher.startWith(prompt, { agent: agent, cwd: o.cwd || backend.agentDirectory(), runtime: backend.paths.runtime })
+    return { pending: true }
+  }
+
+  // A question about something (Agent.composePrompt context), typed next.
+  function askAbout(context, cwd) {
+    var preview = context.kind === "file" ? context.path : String(context.text || "").replace(/\s+/g, " ").trim()
+    return { push: { kind: "agent-question", title: "Ask Agent About This", context: context, cwd: cwd || "", value: "",
+      preview: preview.length > 160 ? preview.slice(0, 160) + "…" : preview } }
+  }
+
+  // The text selected in the app you came from, then the question view.
+  function askAboutSelection() {
+    backend.paste(true, function(text, ok) {
+      if (!ok || !text.trim()) { backend.emit("agent.launchFailed", { message: "Select some text first" }); return }
+      backend.emit("agent.push", backend.askAbout({ kind: "text", text: text }, "").push)
+    })
+    return { pending: true }
+  }
+
+  // An AI Command: the expanded text goes to the agent. {selection} is read
+  // first, so the launch waits for it.
+  function sendAgentCommand(item, values, query) {
+    var parsed = Snippets.analyze(item.text, snippetsStore.doc, backend.snippetDeps)
+    if (parsed.error) return { toast: { style: "failure", title: parsed.error } }
+    var missing = parsed.arguments.some(function(a) { return !a.defaultValue && !String(values[a.name] || "").trim() })
+    if (missing) return { arguments: { id: "snippet:" + item.id, title: item.name } }
+    var args = Snippets.argumentValues(parsed.arguments, values)
+    if (args.error) return { toast: { style: "failure", title: args.error } }
+    function send(selection) {
+      var expanded = Snippets.expand(item.text, snippetsStore.doc, {
+        now: Date.now(), values: args.values, names: backend.localeNames, uuid: Quicklinks.randomUuid, selection: selection,
+        clipboard: backend.clipboardText,
+        calculate: function(expression) { var c = backend.calculate(expression); return c ? c.copy : null }
+      }, backend.snippetDeps)
+      if (expanded.error) throw new Error(expanded.error)
+      backend.recordVisit("snippet:" + item.id, query)
+      return backend.askAgent(expanded.text, {})
+    }
+    if (!parsed.selection) return send("")
+    backend.paste(true, function(text, ok) {
+      try { send(ok ? text : "") } catch (e) { backend.emit("agent.launchFailed", { message: e.message }) }
+    })
+    return { pending: true }
   }
 
   // ---------------------------------------------------------- script menus
@@ -719,7 +805,14 @@ Item {
             Util.execArgv(["omarchy-launch-browser", RootSearch.fillArguments(candidate.run.url, values)])
             return { close: true }
           }
+          if (candidate.run.agent === "ask") {
+            var question = String(((data && data.arguments) || {}).question || "").trim()
+            if (!question) return { arguments: { id: id, title: candidate.title } }
+            backend.recordVisit(id, query)
+            return backend.askAgent(question, {})
+          }
           backend.recordVisit(id, query)
+          if (candidate.run.agent === "selection") return backend.askAboutSelection()
           if (candidate.run.quicklinks) return backend.quicklinksCommand(candidate.run.quicklinks)
           if (candidate.run.settings) return backend.openSettings(candidate.run.settings)
           if (candidate.run.view === "keybindings") {
@@ -732,7 +825,7 @@ Item {
         case "quicklink":
           return backend.openQuicklink(candidate.quicklinkId, (data && data.arguments) || {}, query)
         case "snippet":
-          return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, backend.general.snippetPrimary)
+          return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, candidate.agentCommand ? "paste" : backend.general.snippetPrimary)
         case "fallback":
           Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(candidate, query)])
           return { close: true }
@@ -839,6 +932,7 @@ Item {
   function pasteSnippet(id, values, query, mode) {
     var item = Snippets.get(snippetsStore.doc, id)
     if (!item) return { toast: { style: "failure", title: "Snippet not found" } }
+    if (Snippets.isAgentCommand(item) && mode === "paste") return backend.sendAgentCommand(item, values, query)
     var parsed = Snippets.analyze(item.text, snippetsStore.doc, backend.snippetDeps)
     if (parsed.error) return { toast: { style: "failure", title: parsed.error } }
     var missing = parsed.arguments.some(function(a) { return !a.defaultValue && !String(values[a.name] || "").trim() })
@@ -1100,6 +1194,8 @@ Item {
       case "copy-path":
         Util.execArgv(["wl-copy", "--", path])
         return { close: true, hud: "Copied Path" }
+      case "ask-agent":
+        return backend.askAbout({ kind: "file", path: path }, folder)
     }
     throw new Error("Unknown action " + action)
   }
@@ -1223,7 +1319,11 @@ Item {
         }
         else {
           ctx.filter = String(data && data.filter || "all")
-          if (query.trim() && ctx.filter === "all") ctx.calculation = backend.calculate(query)
+          if (ctx.filter === "all") {
+            ctx.agentQuestion = Agent.quickQuestion(query.replace(/^\s+/, ""), backend.general.agentPrefix)
+            ctx.agents = ctx.agentQuestion === null ? [] : backend.agentList()
+          }
+          if (query.trim() && ctx.filter === "all" && ctx.agentQuestion === null) ctx.calculation = backend.calculate(query)
           // A few file rows under Results; asynchronous, so they join on a
           // later rebuild (fileSource bumps candidatesRevision).
           if (ctx.filter === "all" && backend.general.rootFiles) {
@@ -1246,6 +1346,7 @@ Item {
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" }, prefs)
         if (rowId.indexOf("emoji:") === 0) return RootSearch.actionsFor({ kind: "emoji" }, prefs)
         if (rowId.indexOf("clipboard:") === 0) return RootSearch.actionsFor({ kind: "clipboard" }, prefs)
+        if (rowId.indexOf("agent-ask:") === 0) return RootSearch.actionsFor({ kind: "agent-ask", title: "Ask " + Agent.agentName(rowId.slice("agent-ask:".length)) })
         if (rowId.indexOf("fallback-quicklink:") === 0) {
           var named = backend.quicklinkNames()[rowId.slice("fallback-quicklink:".length)]
           if (!named) throw new Error("That quicklink no longer exists")
@@ -1258,7 +1359,12 @@ Item {
         if (!candidate) {
           var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === data.id })[0]
           if (!fallback) throw new Error("Unknown command " + (data && data.id))
-          return RootSearch.actionsFor({ kind: "fallback", title: fallback.title })
+          var fallbackActions = RootSearch.actionsFor({ kind: "fallback", title: fallback.title })
+          // The other installed agents, for this question only.
+          if (fallback.id === Agent.FALLBACK_ID) backend.agentList().forEach(function(a) {
+            if (!a.isDefault) fallbackActions.push({ id: "ask-with:" + a.id, title: "Ask with " + a.name, shortcut: "", section: "agent", icon: "" })
+          })
+          return fallbackActions
         }
         var actions = RootSearch.actionsFor(candidate, prefs)
         if (candidate.kind === "keybinding") actions[0].title = backend.keybindingText("copy")
@@ -1275,7 +1381,7 @@ Item {
           var entry = backend.historyEntry(rowId)
           return entry ? RootSearch.aboutFor(RootSearch.historyCandidate(entry, nowMs), nowMs) : []
         }
-        if (rowId.indexOf("emoji:") === 0 || rowId.indexOf("clipboard:") === 0 || rowId.indexOf("fallback-quicklink:") === 0) return []
+        if (rowId.indexOf("emoji:") === 0 || rowId.indexOf("clipboard:") === 0 || rowId.indexOf("fallback-quicklink:") === 0 || rowId.indexOf("agent-ask:") === 0) return []
         if (rowId.indexOf("script:") === 0 && !backend.candidatesById[rowId]) {
           var found = backend.scriptItem(rowId)
           return RootSearch.aboutFor(ScriptMenu.candidate(found.menuKey, found.item, "", "", "always"), nowMs)
@@ -1307,11 +1413,15 @@ Item {
         var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === (data && data.id) })[0]
         if (fallback) {
           if (fallback.id === Agent.FALLBACK_ID) {
-            agentLauncher.start(data.query)
-            return { pending: true }
+            var withAgent = String(data.action || "").indexOf("ask-with:") === 0 ? String(data.action).slice("ask-with:".length) : ""
+            return backend.askAgent(data.query, { agent: withAgent })
           }
           Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(fallback, data.query)])
           return { close: true }
+        }
+        if (data && String(data.id).indexOf("agent-ask:") === 0) {
+          var asked = Agent.quickQuestion(String(data.query || "").replace(/^\s+/, ""), backend.general.agentPrefix)
+          return backend.askAgent(asked === null ? data.query : asked, { agent: String(data.id).slice("agent-ask:".length) })
         }
         var file = fileSource.lookup(String(data && data.id || ""))
         if (file) return backend.performFileAction(file, String(data.action || "open"))
@@ -1351,6 +1461,34 @@ Item {
         }
         if (rowId.indexOf("script:") === 0) return backend.scriptDetail(rowId)
         return null
+      }
+    })
+
+    // Agent hand-off (fork): what Settings → AI shows and changes.
+    Rpc.register(backend.registry, "agent", {
+      list: function() {
+        return { agents: backend.agentList(), defaultAgent: backend.agentInfo.defaultAgent,
+          known: Agent.AGENTS, checking: agentsProc.running, updatingUsage: usageUpdate.running }
+      },
+      refresh: function() { backend.refreshAgents(); return true },
+      setDefault: function(data) {
+        var id = String(data && data.id || "")
+        if (backend.agentInfo.installed.indexOf(id) < 0) throw new Error(Agent.agentName(id) + " is not installed")
+        if (setDefaultProc.running) throw new Error("Already changing the default agent")
+        setDefaultProc.output = ""
+        // What omarchy-default-agent saves, without the session it then starts.
+        setDefaultProc.command = ["bash", "-c", 'f="$HOME/.config/omarchy/defaults/agent"; mkdir -p -- "${f%/*}" && printf "%s\\n" "$1" >"$f"', "bash", id]
+        setDefaultProc.running = true
+        return true
+      },
+      updateUsage: function() {
+        if (!usageUpdate.running) usageUpdate.running = true
+        return true
+      },
+      ask: function(data) {
+        var d = data || {}
+        var prompt = d.context ? Agent.composePrompt(d.question, d.context) : String(d.question || "")
+        return backend.askAgent(prompt, { agent: d.agent, cwd: d.cwd })
       }
     })
 
@@ -1553,6 +1691,7 @@ Item {
     } catch (e) { /* Omarchy 4.0.5: use the bundled English strings. */ }
     registerServices()
     mkdirs.running = true
+    backend.refreshAgents()
   }
 
   onAppLibraryChanged: rebuildTimer.restart()
@@ -1578,6 +1717,7 @@ Item {
       keybindingsSource.refresh()
     }
     if (method === "window.visibilityChanged" && data && !data.visible) agentLauncher.cancel()
+    if (method === "window.visibilityChanged" && data && data.visible) backend.refreshAgents()
   }
 
   AppFocuser {
@@ -1589,6 +1729,51 @@ Item {
     id: agentLauncher
     onPrepared: function(argv) { backend.emit("agent.launchReady", { argv: argv }) }
     onFailed: function(message) { backend.emit("agent.launchFailed", { message: message }) }
+  }
+
+  Process {
+    id: agentsProc
+    property string collected: ""
+    command: ["bash", "-lc", Agent.AGENTS_SCRIPT]
+    stdout: SplitParser { onRead: function(line) { agentsProc.collected += line + "\n" } }
+    onExited: { backend.agentInfo = Agent.parseAgents(agentsProc.collected); backend.agentRevision++ }
+  }
+
+  // Omarchy's usage records: "<file>\t<json>" per agent.
+  Process {
+    id: usageProc
+    property var collected: ({})
+    command: ["bash", "-c", 'for f in "${XDG_STATE_HOME:-$HOME/.local/state}"/omarchy/agents/usage/*.json; do [[ -f $f ]] || continue; n=${f##*/}; printf "%s\\t" "${n%.json}"; tr -d "\\n" <"$f"; echo; done']
+    stdout: SplitParser {
+      onRead: function(line) {
+        var tab = line.indexOf("\t")
+        if (tab <= 0) return
+        try { usageProc.collected[line.slice(0, tab)] = JSON.parse(line.slice(tab + 1)) } catch (e) {}
+      }
+    }
+    onExited: { backend.agentUsage = usageProc.collected; backend.agentRevision++ }
+  }
+
+  // Omarchy fetches fresh numbers from each agent's provider.
+  Process {
+    id: usageUpdate
+    command: ["bash", "-lc", "command -v omarchy-agent-usage-update >/dev/null && omarchy-agent-usage-update"]
+    onRunningChanged: backend.agentRevision++
+    onExited: function(exitCode) {
+      if (exitCode !== 0) backend.emit("agent.usageFailed", { message: "Could not update usage" })
+      backend.refreshAgents()
+    }
+  }
+
+  Process {
+    id: setDefaultProc
+    property string output: ""
+    stdout: SplitParser { onRead: function(line) { setDefaultProc.output = (setDefaultProc.output + line + "\n").slice(-400) } }
+    stderr: SplitParser { onRead: function(line) { setDefaultProc.output = (setDefaultProc.output + line + "\n").slice(-400) } }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) backend.emit("agent.usageFailed", { message: setDefaultProc.output.trim() || "Could not change the default agent" })
+      backend.refreshAgents()
+    }
   }
 
 

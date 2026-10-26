@@ -380,3 +380,25 @@ test("a calculation with several answers gets a row each, with indexed ids", () 
   assert.equal(RS.calculationAt(calc, 1).copy, "£75.00")
   assert.equal(RS.calculationAt(calc, 2), null)
 })
+
+test("the ask trigger shows one row per installed agent, the default first", () => {
+  const agents = [{ id: "claude", name: "Claude Code", isDefault: true }, { id: "codex", name: "Codex", isDefault: false }]
+  const sections = results("? why", ctx({ agentQuestion: "why", agents }))
+  assert.deepEqual(sections.map((s) => s.id), ["ask"])
+  assert.deepEqual(titles(sections[0]), ["Ask Claude Code", "Ask Codex"])
+  assert.equal(sections[0].rows[0].candidate.typeLabel, "Default Agent")
+  assert.equal(results("?", ctx({ agentQuestion: "", agents }))[0].rows[0].candidate.subtitle, "Type a question")
+  // No agents installed: ordinary results.
+  assert.notEqual(results("fir", ctx({ agentQuestion: "fir", agents: [] }))[0].id, "ask")
+  assert.deepEqual(RS.actionsFor(sections[0].rows[1].candidate).map((a) => a.title), ["Ask Codex"])
+})
+
+test("Ask Agent commands, and Ask Agent About This on clipboard entries and files", () => {
+  assert.equal(titles(results("ask agent")[0])[0], "Ask Agent")
+  assert.ok(results("ask selection")[0].rows.some((r) => r.candidate.id === "builtin:ask-selection"))
+  assert.ok(RS.actionsFor({ kind: "clipboard" }).some((a) => a.id === "ask-agent"))
+  assert.ok(RS.actionsFor({ kind: "file", path: "/a/b.txt" }).some((a) => a.id === "ask-agent"))
+  const command = { kind: "snippet", agentCommand: true, favoriteOrder: null }
+  assert.deepEqual(RS.actionsFor(command, { snippet: "copy" }).slice(0, 2).map((a) => a.title), ["Send to Agent", "Copy Prompt"])
+  assert.ok(!RS.actionsFor(Object.assign({ usesSelection: true }, command)).some((a) => a.id === "copy-snippet"))
+})

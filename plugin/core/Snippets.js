@@ -1,20 +1,29 @@
 // Snippets (fork, SPEC §8.3, launcher only: no keyword expansion while
 // typing in other apps). Saved text with placeholders, pasted from the
 // launcher. Stored in db/snippets.json as
-// items [{id, name, text, keyword, createdAt, updatedAt}].
+// items [{id, name, text, keyword, action?, createdAt, updatedAt}].
 //
 // The placeholder lexer (quotes, escapes, modifiers, options) and date
 // formatting come from Quicklinks.js through `deps.lexer`, so the grammar
 // stays one implementation. Snippet rules differ: {cursor}, nested {snippet}
 // and {calculator} are allowed, {selection} is not (Raycast keeps it off for
 // snippets), and an unknown {word} is literal text, not an argument.
+//
+// An AI Command (fork) is a snippet with action "agent": its text is sent to
+// your agent instead of pasted, and it may use {selection}, the text selected
+// in the app you came from.
 
 var NAME_MAX = 200
 var TEXT_MAX = 20000
 var KEYWORD_MAX = 64
 var ARGUMENTS_MAX = 3            // [O] ref 02 §5.2
 var CURSOR_MAX = 1               // [O]
-var KEYWORDS = ["cursor", "clipboard", "uuid", "argument", "date", "time", "datetime", "day", "snippet", "calculator"]
+var KEYWORDS = ["cursor", "clipboard", "uuid", "argument", "date", "time", "datetime", "day", "snippet", "calculator", "selection"]
+var ACTIONS = ["paste", "agent"]
+
+function isAgentCommand(item) {
+  return !!item && item.action === "agent"
+}
 var MODIFIERS = ["uppercase", "lowercase", "trim", "percent-encode", "json-stringify", "raw"]
 var OFFSET = /^([+-])(\d+)([mhHdDMyY])$/
 var CURSOR_MARK = "\u0000"
@@ -51,6 +60,8 @@ function validate(doc, input, exceptId, deps) {
   var name = String(input && input.name != null ? input.name : "").trim()
   var text = String(input && input.text != null ? input.text : "")
   var keyword = String(input && input.keyword != null ? input.keyword : "").trim()
+  var action = input && input.action ? String(input.action) : "paste"
+  if (ACTIONS.indexOf(action) < 0) return { error: "Unknown snippet action " + action }
   if (!name) return { error: "A snippet needs a name" }
   if (name.length > NAME_MAX) return { error: "That name is too long" }
   if (!text.trim()) return { error: "A snippet needs some text" }
@@ -62,7 +73,11 @@ function validate(doc, input, exceptId, deps) {
   if (keyword && others.some(function(item) { return item.keyword === keyword })) return { error: "The keyword " + keyword + " is already used" }
   var parsed = analyze(text, { items: others }, deps)
   if (parsed.error) return { error: parsed.error }
-  return { error: "", item: { name: name, text: text, keyword: keyword } }
+  if (parsed.selection && action !== "agent") return { error: "Only AI Commands can use {selection}" }
+  if (parsed.cursor && action === "agent") return { error: "AI Commands cannot use {cursor}" }
+  var item = { name: name, text: text, keyword: keyword }
+  if (action === "agent") item.action = "agent"
+  return { error: "", item: item }
 }
 
 function save(doc, input, ctx, deps) {
@@ -111,6 +126,7 @@ function exportList(doc) {
   return list(doc).map(function(item) {
     var row = { name: item.name, text: item.text }
     if (item.keyword) row.keyword = item.keyword
+    if (item.action === "agent") row.action = "agent"
     return row
   })
 }
@@ -120,7 +136,6 @@ function exportList(doc) {
 // {kind, modifiers, attrs, ...}, {error}, or null for literal text.
 function parsePlaceholder(inner, lexer) {
   var head = inner.split(/[ |]/)[0].toLowerCase()
-  if (head === "selection") return { error: "Snippets cannot use {selection}" }
   if (KEYWORDS.indexOf(head) < 0) return null
   var tokens = lexer.tokenize(inner)
   for (var m = 0; m < tokens.modifiers.length; m++) {
@@ -185,13 +200,15 @@ function walk(text, visit, lexer) {
 // {cursor} appears at most once and that nested snippets exist and are flat.
 function analyze(text, doc, deps) {
   var lexer = deps.lexer
-  var args = [], cursors = 0
+  var args = [], cursors = 0, selection = false
   var result = walk(String(text || ""), function(p) {
     if (p.kind === "cursor") cursors++
+    if (p.kind === "selection") selection = true
     if (p.kind === "snippet") {
       var nested = byName(doc, p.name)
       if (!nested) return { error: "No snippet named " + p.name }
       var inner = walk(nested.text, function(q) {
+        if (q.kind === "selection") selection = true
         return q.kind === "snippet" || q.kind === "argument" ? { error: p.name + " cannot be nested: it uses {" + q.kind + "}" } : ""
       }, lexer)
       if (inner.error) return { error: inner.error }
@@ -208,7 +225,7 @@ function analyze(text, doc, deps) {
   if (result.error) return { error: result.error }
   if (cursors > CURSOR_MAX) return { error: "A snippet can have only one {cursor}" }
   if (args.length > ARGUMENTS_MAX) return { error: "A snippet can have at most " + ARGUMENTS_MAX + " arguments" }
-  return { error: "", arguments: args }
+  return { error: "", arguments: args, selection: selection, cursor: cursors > 0 }
 }
 
 // Defaults, trimming, required arguments and options (an option matches its
@@ -230,7 +247,7 @@ function argumentValues(args, given) {
   return { error: "", values: out }
 }
 
-// ctx: {now, values, names, clipboard(offset) -> string|null,
+// ctx: {now, values, names, selection, clipboard(offset) -> string|null,
 // calculate(expression) -> string|null, uuid() -> string}.
 // Returns {text, cursorFromEnd}: how many characters after the {cursor}.
 function expand(text, doc, ctx, deps) {
@@ -242,6 +259,10 @@ function expand(text, doc, ctx, deps) {
         case "cursor": return nested ? "" : CURSOR_MARK
         case "argument": value = (ctx.values && ctx.values[p.name]) || ""; break
         case "uuid": value = ctx.uuid(); break
+        case "selection":
+          value = ctx.selection
+          if (!value) return { error: "Select some text first" }
+          break
         case "clipboard":
           value = ctx.clipboard(p.offset)
           if (value === null || value === undefined) return { error: p.offset ? "Clipboard history has no text entry " + p.offset : "The clipboard has no text" }
@@ -295,8 +316,10 @@ function toCandidate(item, doc, deps) {
     title: item.name,
     subtitle: preview(item.text),
     keywords: item.keyword ? [item.keyword] : [],
-    typeLabel: item.keyword ? item.keyword : "Snippet",
-    glyph: "",                     // nf-fa-code
+    typeLabel: item.keyword ? item.keyword : (isAgentCommand(item) ? "AI Command" : "Snippet"),
+    agentCommand: isAgentCommand(item),
+    usesSelection: !parsed.error && parsed.selection,   // read only when sent, so no Copy Prompt
+    glyph: isAgentCommand(item) ? "\u{f06a9}" : "\uf121",   // nf-md-robot / nf-fa-code
     snippetId: item.id,
     // Pills read {placeholder, required}; a default makes one optional.
     arguments: parsed.error ? [] : parsed.arguments.map(function(a) {
@@ -313,6 +336,7 @@ function toCandidate(item, doc, deps) {
 function detail(item, relative) {
   var meta = [{ label: "Name", value: item.name }]
   if (item.keyword) meta.push({ label: "Keyword", value: item.keyword })
+  if (isAgentCommand(item)) meta.push({ label: "Action", value: "Send to your agent" })
   meta.push({ label: "Characters", value: String(item.text.length) })
   if (item.updatedAt) meta.push({ label: "Modified", value: relative(item.updatedAt) })
   return { body: item.text, mono: true, metadata: meta, pinMetadata: true }
@@ -323,6 +347,7 @@ if (typeof module !== "undefined") {
     NAME_MAX: NAME_MAX,
     TEXT_MAX: TEXT_MAX,
     list: list,
+    isAgentCommand: isAgentCommand,
     get: get,
     byName: byName,
     validate: validate,

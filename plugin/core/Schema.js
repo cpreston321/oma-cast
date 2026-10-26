@@ -127,7 +127,17 @@ var generalAdditions = {
   snippetPrimary: "paste",
   calculatorPrimary: "copy",
   emojiFrequentCount: 16,
-  clipboardRows: 100
+  clipboardRows: 100,
+  // Agent hand-off: typing this then a space asks an agent ("" turns it
+  // off); sessions start in agentDirectory ("" is Omarchy's default, ~/Work).
+  agentPrefix: "?",
+  agentDirectory: ""
+}
+
+// Text-valued general settings with rules of their own.
+var generalTexts = {
+  agentPrefix: function(v) { return v.length <= 3 && !/\s/.test(v) ? null : "The ask prefix is up to 3 characters, no spaces" },
+  agentDirectory: function(v) { return !v || (/^(~|\/)/.test(v) && !/[\n\0]/.test(v)) ? null : "The folder must start with / or ~" }
 }
 
 // Inclusive bounds for numeric general settings. The card is also clamped to
@@ -164,6 +174,8 @@ function withGeneralDefaults(general) {
 
 // null when `value` is acceptable for general setting `key`, else the reason.
 function checkGeneralValue(key, value) {
+  var textRule = generalTexts[key]
+  if (textRule) return typeof value === "string" ? textRule(value) : "Setting " + key + " must be text"
   var list = generalLists[key]
   if (list) {
     if (!Array.isArray(value)) return "Setting " + key + " must be a list"

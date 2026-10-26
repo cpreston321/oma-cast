@@ -13,13 +13,15 @@ SettingsPage {
   required property var host
 
   title: "Snippets"
-  description: "Saved text to paste from the launcher. Placeholders fill in when you paste."
+  description: "Saved text to paste from the launcher, or AI Commands sent to your agent. Placeholders fill in when you use them."
 
   // "" nothing open, "new" a draft, else the id being edited.
   property string selectedId: ""
   property string error: ""
   property bool confirmDelete: false
   property string pendingSelect: ""
+  // An AI Command: sent to your agent instead of pasted.
+  property bool agentAction: false
 
   readonly property var snippets: {
     page.backend.storeRevision
@@ -29,9 +31,15 @@ SettingsPage {
   readonly property var stored: page.snippets.filter(function(s) { return s.id === page.selectedId })[0] || null
   readonly property bool dirty: page.selectedId === "new"
     ? !!(nameField.text || keywordField.text || textArea.text)
-    : !!page.stored && (nameField.text !== page.stored.name || keywordField.text !== (page.stored.keyword || "") || textArea.text !== page.stored.text)
+    : !!page.stored && (nameField.text !== page.stored.name || keywordField.text !== (page.stored.keyword || "") || textArea.text !== page.stored.text
+      || page.agentAction !== (page.stored.action === "agent"))
 
-  readonly property var placeholders: [
+  readonly property var placeholders: page.agentAction ? [
+    { label: "Selection", text: "{selection}" },
+    { label: "Clipboard", text: "{clipboard}" },
+    { label: "Argument", text: "{argument name=\"name\"}" },
+    { label: "Date", text: "{date}" }
+  ] : [
     { label: "Cursor", text: "{cursor}" },
     { label: "Clipboard", text: "{clipboard}" },
     { label: "Date", text: "{date}" },
@@ -55,12 +63,14 @@ SettingsPage {
     nameField.text = item ? item.name : ""
     keywordField.text = item ? (item.keyword || "") : ""
     textArea.text = item ? item.text : ""
+    page.agentAction = !!item && item.action === "agent"
     page.error = ""
     if (id === "new") nameField.forceActiveFocus()
   }
 
   function draft() {
-    return { id: page.selectedId === "new" ? "" : page.selectedId, name: nameField.text, keyword: keywordField.text, text: textArea.text }
+    return { id: page.selectedId === "new" ? "" : page.selectedId, name: nameField.text, keyword: keywordField.text, text: textArea.text,
+      action: page.agentAction ? "agent" : "paste" }
   }
 
   function save() {
@@ -173,8 +183,27 @@ SettingsPage {
       Item { width: 1; height: Style.space(4) }
       Row {
         width: parent.width
+        spacing: Style.space(10)
+        ToggleSwitch {
+          anchors.verticalCenter: parent.verticalCenter
+          checked: page.agentAction
+          onToggled: { page.agentAction = !page.agentAction; checkTimer.restart() }
+        }
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: page.agentAction ? "AI Command: ↵ sends the text to your agent; {selection} is what you had selected"
+            : "Send to your agent instead of pasting (AI Command)"
+          color: page.agentAction ? page.look.foreground : page.look.muted
+          font.family: page.look.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+      Item { width: 1; height: Style.space(4) }
+      Row {
+        width: parent.width
         spacing: Style.space(6)
-        FieldLabel { look: page.look; text: "Text"; anchors.verticalCenter: parent.verticalCenter }
+        FieldLabel { look: page.look; text: page.agentAction ? "Prompt" : "Text"; anchors.verticalCenter: parent.verticalCenter }
         Item { width: Style.space(8); height: 1 }
         Repeater {
           model: page.placeholders

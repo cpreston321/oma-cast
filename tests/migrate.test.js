@@ -119,3 +119,15 @@ test("config rejects out-of-range calculator values and unknown choices", () => 
   assert.equal(Schema.withConfigDefaults({ clockFormat: "36h" }).clockFormat, "auto")
   assert.deepEqual(Schema.generalChoices.navigationBindings, ["emacs", "vim-motions"])
 })
+
+test("agent settings: the ask prefix and the start folder", () => {
+  const g = Schema.withGeneralDefaults({})
+  assert.equal(g.agentPrefix, "?")
+  assert.equal(g.agentDirectory, "")
+  assert.equal(Schema.checkGeneralValue("agentPrefix", ""), null)
+  assert.equal(Schema.checkGeneralValue("agentPrefix", "ai:"), null)
+  assert.match(Schema.checkGeneralValue("agentPrefix", "a b"), /no spaces/)
+  assert.match(Schema.checkGeneralValue("agentPrefix", 3), /must be text/)
+  assert.equal(Schema.checkGeneralValue("agentDirectory", "~/code"), null)
+  assert.match(Schema.checkGeneralValue("agentDirectory", "code"), /start with/)
+})

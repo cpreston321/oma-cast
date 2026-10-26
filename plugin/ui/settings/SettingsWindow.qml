@@ -39,6 +39,7 @@ FloatingWindow {
     { id: "quicklinks", title: "Quicklinks", glyph: "\uf0c1" },
     { id: "paste", title: "Paste & Copy", glyph: "\uf0ea" },
     { id: "calculator", title: "Calculator", glyph: "\uf1ec" },
+    { id: "ai", title: "AI", glyph: "\u{f06a9}" },
     { id: "data", title: "Data", glyph: "\uf1c0" }
   ]
 
@@ -247,6 +248,7 @@ FloatingWindow {
     QuicklinksPage { id: quicklinksPage; anchors.fill: parent; visible: win.tab === "quicklinks"; backend: win.backend; host: win; look: win.look }
     PastePage { anchors.fill: parent; visible: win.tab === "paste"; backend: win.backend; host: win; look: win.look }
     CalculatorPage { anchors.fill: parent; visible: win.tab === "calculator"; backend: win.backend; host: win; look: win.look }
+    AiPage { anchors.fill: parent; visible: win.tab === "ai"; backend: win.backend; host: win; look: win.look }
     DataPage { anchors.fill: parent; visible: win.tab === "data"; backend: win.backend; host: win; look: win.look }
   }
 

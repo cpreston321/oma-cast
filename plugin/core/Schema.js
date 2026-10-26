@@ -197,7 +197,12 @@ var configDefaults = {
   remToPxRate: 16,
   workHoursPerDay: 8,
   // "auto" follows the Qt locale; "12h" or "24h" forces a clock. [D]
-  clockFormat: "auto"
+  clockFormat: "auto",
+  // Lone amounts of money ("$100") convert to homeCurrency, or from it to
+  // secondCurrency. "auto": the locale's currency, then EUR (USD for euro
+  // users). Otherwise an ISO code. [D]
+  homeCurrency: "auto",
+  secondCurrency: "auto"
 }
 
 // Values a config key or general setting may take, beyond its type.
@@ -221,6 +226,7 @@ var generalChoices = {
 function validConfigValue(key, value) {
   if (typeof value !== typeof configDefaults[key]) return false
   if (configChoices[key]) return configChoices[key].indexOf(value) >= 0
+  if (key === "homeCurrency" || key === "secondCurrency") return /^(auto|[A-Z]{3})$/.test(value)
   if (typeof value === "number") return isFinite(value) && value > 0
   return true
 }

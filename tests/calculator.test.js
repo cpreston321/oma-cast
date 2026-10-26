@@ -219,3 +219,49 @@ test("scientific notation shows its value; other bare numbers don't", () => {
   assert.equal(result("2.5e-3"), "0.0025")
   assert.equal(C.evaluate("1000000", env), null)
 })
+
+// ---- fork: money
+
+const money = Object.assign({}, env, {
+  homeCurrency: "USD", secondCurrency: "EUR",
+  rates: { base: "EUR", date: "2026-10-26", rates: { USD: 1.12, GBP: 0.84, JPY: 177.6, CAD: 1.57, AUD: 1.6, TWD: 36.5, AED: 4.119, RUB: 90.6, BTC: 0.0000137, NGN: 1508 } }
+})
+const cash = (q, e) => { const r = C.evaluate(q, e || money); return r && r.result }
+
+test("a lone amount of money converts to your currency, or from it to your second", () => {
+  assert.equal(cash("€50"), "$56.00")
+  assert.equal(cash("100 cad"), "$71.34")
+  assert.equal(cash("$100"), "€89.29")
+  assert.equal(cash("100 usd"), "€89.29")
+  assert.equal(cash("$100", Object.assign({}, money, { homeCurrency: "EUR", secondCurrency: "USD" })), "€89.29")
+  assert.equal(cash("€100", Object.assign({}, money, { homeCurrency: "EUR", secondCurrency: "USD" })), "$112.00")
+  assert.equal(C.evaluate("$100", Object.assign({}, money, { rates: null })), null, "no rates, no row")
+  assert.equal(C.evaluate("usd", money), null, "a bare code is a word, not an amount")
+})
+
+test("beside money, pounds are sterling; on their own they're still weight", () => {
+  assert.equal(cash("100 dollars in pounds"), "£75.00")
+  assert.equal(cash("100 pounds to dollars"), "$133.33")
+  assert.equal(cash("150 lbs to kg"), "68.0389 kg")
+})
+
+test("Frankfurter's wider list: names, prefixed dollars, new symbols, crypto", () => {
+  assert.equal(cash("100 usd to aed"), "367.77 AED")
+  assert.equal(cash("50 dirhams to usd"), "$13.60")
+  assert.equal(cash("NT$500 to usd"), "$15.34")
+  assert.equal(cash("CA$100 to usd"), "$71.34")
+  assert.equal(cash("A$100 to usd"), "$70.00")
+  assert.equal(cash("₽1000 to usd"), "$12.36")
+  assert.equal(cash("1000 naira to usd"), "$0.74")
+  assert.equal(cash("1 btc to usd"), "$81,751.82")
+  assert.equal(cash("$100 to btc"), "₿0.001223", "crypto keeps significant figures")
+  assert.equal(C.evaluate("100 dollars in pounds", money).resultCaption, "British Pound (GBP)")
+  assert.equal(C.evaluate("100 usd to aed", money).resultCaption, "United Arab Emirates Dirham (AED)")
+})
+
+test("the automatic currency comes from the locale", () => {
+  assert.equal(C.localeCurrency("en_US"), "USD")
+  assert.equal(C.localeCurrency("en_GB.UTF-8"), "GBP")
+  assert.equal(C.localeCurrency("de_DE"), "EUR")
+  assert.equal(C.localeCurrency("C"), "")
+})

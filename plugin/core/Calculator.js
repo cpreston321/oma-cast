@@ -288,12 +288,167 @@ var CURRENCIES = {
   PHP: { symbol: "", names: ["philippine peso", "philippine pesos", "php"] },
   IDR: { symbol: "", names: ["rupiah", "indonesian rupiah", "idr"], decimals: 0 }
 }
-var CURRENCY_SYMBOLS = { "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR", "₩": "KRW", "₺": "TRY", "₪": "ILS" }
+
+// The rest of Frankfurter's currencies (fork; names from its /v2/currencies).
+// crypto: shown to significant figures, not cents.
+var MORE_CURRENCIES = {
+  AED: {symbol: "", names: ["united arab emirates dirham", "united arab emirates dirhams", "dirham", "dirhams", "uae dirham", "uae dirhams", "aed"]},
+  AFN: {symbol: "", names: ["afghan afghani", "afghan afghanis", "afn"]},
+  ALL: {symbol: "", names: ["albanian lek", "albanian leks", "all"]},
+  AMD: {symbol: "", names: ["armenian dram", "armenian drams", "dram", "drams", "amd"]},
+  ANG: {symbol: "", names: ["netherlands antillean guilder", "netherlands antillean guilders", "ang"]},
+  AOA: {symbol: "", names: ["angolan kwanza", "angolan kwanzas", "aoa"]},
+  ARS: {symbol: "", names: ["argentine peso", "argentine pesos", "argentine peso", "argentine pesos", "ars"]},
+  AWG: {symbol: "", names: ["aruban florin", "aruban florins", "awg"]},
+  AZN: {symbol: "₼", names: ["azerbaijani manat", "azerbaijani manats", "azn"]},
+  BAM: {symbol: "", names: ["bosnia and herzegovina convertible mark", "bosnia and herzegovina convertible marks", "bam"]},
+  BBD: {symbol: "", names: ["barbadian dollar", "barbadian dollars", "bbd"]},
+  BCH: {symbol: "", names: ["bitcoin cash", "bitcoin cashs", "bitcoin cash", "bch"], crypto: true},
+  BDT: {symbol: "", names: ["bangladeshi taka", "bangladeshi takas", "taka", "bdt"]},
+  BHD: {symbol: "", names: ["bahraini dinar", "bahraini dinars", "bhd"]},
+  BIF: {symbol: "", names: ["burundian franc", "burundian francs", "bif"], decimals: 0},
+  BMD: {symbol: "", names: ["bermudian dollar", "bermudian dollars", "bmd"]},
+  BND: {symbol: "", names: ["brunei dollar", "brunei dollars", "bnd"]},
+  BOB: {symbol: "", names: ["bolivian boliviano", "bolivian bolivianos", "bob"]},
+  BSD: {symbol: "", names: ["bahamian dollar", "bahamian dollars", "bsd"]},
+  BTC: {symbol: "₿", names: ["bitcoin", "bitcoin", "bitcoins", "btc", "btc"], crypto: true},
+  BTN: {symbol: "", names: ["bhutanese ngultrum", "bhutanese ngultrums", "btn"]},
+  BWP: {symbol: "", names: ["botswana pula", "botswana pulas", "bwp"]},
+  BYN: {symbol: "", names: ["belarusian ruble", "belarusian rubles", "byn"]},
+  BZD: {symbol: "", names: ["belize dollar", "belize dollars", "bzd"]},
+  CDF: {symbol: "", names: ["congolese franc", "congolese francs", "cdf"]},
+  CLP: {symbol: "", names: ["chilean peso", "chilean pesos", "chilean peso", "chilean pesos", "clp"], decimals: 0},
+  CNH: {symbol: "", names: ["chinese renminbi yuan offshore", "chinese renminbi yuan offshores", "cnh"]},
+  COP: {symbol: "", names: ["colombian peso", "colombian pesos", "colombian peso", "colombian pesos", "cop"]},
+  CRC: {symbol: "₡", names: ["costa rican colón", "costa rican colóns", "crc"]},
+  CUP: {symbol: "", names: ["cuban peso", "cuban pesos", "cup"]},
+  CVE: {symbol: "", names: ["cape verdean escudo", "cape verdean escudos", "cve"]},
+  DJF: {symbol: "", names: ["djiboutian franc", "djiboutian francs", "djf"], decimals: 0},
+  DOP: {symbol: "", names: ["dominican peso", "dominican pesos", "dop"]},
+  DZD: {symbol: "", names: ["algerian dinar", "algerian dinars", "dzd"]},
+  EGP: {symbol: "", names: ["egyptian pound", "egyptian pounds", "egyptian pound", "egyptian pounds", "egp"]},
+  ERN: {symbol: "", names: ["eritrean nakfa", "eritrean nakfas", "ern"]},
+  ETB: {symbol: "", names: ["ethiopian birr", "ethiopian birrs", "etb"]},
+  ETH: {symbol: "Ξ", names: ["ethereum", "ether", "ethereum", "eth", "eth"], crypto: true},
+  FJD: {symbol: "", names: ["fijian dollar", "fijian dollars", "fjd"]},
+  FKP: {symbol: "", names: ["falkland pound", "falkland pounds", "fkp"]},
+  GEL: {symbol: "₾", names: ["georgian lari", "georgian laris", "lari", "gel"]},
+  GGP: {symbol: "", names: ["guernsey pound", "guernsey pounds", "ggp"]},
+  GHS: {symbol: "₵", names: ["ghanaian cedi", "ghanaian cedis", "cedi", "cedis", "ghs"]},
+  GIP: {symbol: "", names: ["gibraltar pound", "gibraltar pounds", "gip"]},
+  GMD: {symbol: "", names: ["gambian dalasi", "gambian dalasis", "gmd"]},
+  GNF: {symbol: "", names: ["guinean franc", "guinean francs", "gnf"], decimals: 0},
+  GTQ: {symbol: "", names: ["guatemalan quetzal", "guatemalan quetzals", "gtq"]},
+  GYD: {symbol: "", names: ["guyanese dollar", "guyanese dollars", "gyd"]},
+  HNL: {symbol: "", names: ["honduran lempira", "honduran lempiras", "hnl"]},
+  HTG: {symbol: "", names: ["haitian gourde", "haitian gourdes", "htg"]},
+  IMP: {symbol: "", names: ["isle of man pound", "isle of man pounds", "imp"]},
+  IQD: {symbol: "", names: ["iraqi dinar", "iraqi dinars", "iqd"], decimals: 0},
+  IRR: {symbol: "", names: ["iranian rial", "iranian rials", "irr"], decimals: 0},
+  JEP: {symbol: "", names: ["jersey pound", "jersey pounds", "jep"]},
+  JMD: {symbol: "", names: ["jamaican dollar", "jamaican dollars", "jmd"]},
+  JOD: {symbol: "", names: ["jordanian dinar", "jordanian dinars", "jod"]},
+  KES: {symbol: "", names: ["kenyan shilling", "kenyan shillings", "kenyan shilling", "kenyan shillings", "kes"]},
+  KGS: {symbol: "", names: ["kyrgyzstani som", "kyrgyzstani soms", "kgs"]},
+  KHR: {symbol: "", names: ["cambodian riel", "cambodian riels", "khr"], decimals: 0},
+  KMF: {symbol: "", names: ["comorian franc", "comorian francs", "kmf"], decimals: 0},
+  KPW: {symbol: "", names: ["north korean won", "north korean wons", "kpw"], decimals: 0},
+  KWD: {symbol: "", names: ["kuwaiti dinar", "kuwaiti dinars", "kwd"]},
+  KYD: {symbol: "", names: ["cayman islands dollar", "cayman islands dollars", "kyd"]},
+  KZT: {symbol: "₸", names: ["kazakhstani tenge", "kazakhstani tenges", "tenge", "kzt"]},
+  LAK: {symbol: "₭", names: ["lao kip", "lao kips", "lak"], decimals: 0},
+  LBP: {symbol: "", names: ["lebanese pound", "lebanese pounds", "lbp"], decimals: 0},
+  LKR: {symbol: "", names: ["sri lankan rupee", "sri lankan rupees", "sri lankan rupee", "sri lankan rupees", "lkr"]},
+  LRD: {symbol: "", names: ["liberian dollar", "liberian dollars", "lrd"]},
+  LSL: {symbol: "", names: ["lesotho loti", "lesotho lotis", "lsl"]},
+  LTC: {symbol: "", names: ["litecoin", "litecoin", "litecoins", "ltc"], crypto: true},
+  LYD: {symbol: "", names: ["libyan dinar", "libyan dinars", "lyd"]},
+  MAD: {symbol: "", names: ["moroccan dirham", "moroccan dirhams", "mad"]},
+  MDL: {symbol: "", names: ["moldovan leu", "moldovan leus", "mdl"]},
+  MGA: {symbol: "", names: ["malagasy ariary", "malagasy ariarys", "mga"], decimals: 0},
+  MKD: {symbol: "", names: ["macedonian denar", "macedonian denars", "mkd"]},
+  MMK: {symbol: "", names: ["myanmar kyat", "myanmar kyats", "mmk"], decimals: 0},
+  MNT: {symbol: "₮", names: ["mongolian tögrög", "mongolian tögrögs", "mnt"]},
+  MOP: {symbol: "", names: ["macanese pataca", "macanese patacas", "mop"]},
+  MRU: {symbol: "", names: ["mauritanian ouguiya", "mauritanian ouguiyas", "mru"]},
+  MUR: {symbol: "", names: ["mauritian rupee", "mauritian rupees", "mur"]},
+  MVR: {symbol: "", names: ["maldivian rufiyaa", "maldivian rufiyaas", "mvr"]},
+  MWK: {symbol: "", names: ["malawian kwacha", "malawian kwachas", "mwk"]},
+  MZN: {symbol: "", names: ["mozambican metical", "mozambican meticals", "mzn"]},
+  NAD: {symbol: "", names: ["namibian dollar", "namibian dollars", "nad"]},
+  NGN: {symbol: "₦", names: ["nigerian naira", "nigerian nairas", "naira", "ngn"]},
+  NIO: {symbol: "", names: ["nicaraguan córdoba", "nicaraguan córdobas", "nio"]},
+  NPR: {symbol: "", names: ["nepalese rupee", "nepalese rupees", "nepalese rupee", "nepalese rupees", "npr"]},
+  OMR: {symbol: "", names: ["omani rial", "omani rials", "omr"]},
+  PAB: {symbol: "", names: ["panamanian balboa", "panamanian balboas", "pab"]},
+  PEN: {symbol: "", names: ["peruvian sol", "peruvian sols", "peruvian sol", "peruvian soles", "pen"]},
+  PGK: {symbol: "", names: ["papua new guinean kina", "papua new guinean kinas", "pgk"]},
+  PKR: {symbol: "", names: ["pakistani rupee", "pakistani rupees", "pakistani rupee", "pakistani rupees", "pkr"]},
+  PYG: {symbol: "₲", names: ["paraguayan guaraní", "paraguayan guaranís", "pyg"], decimals: 0},
+  QAR: {symbol: "", names: ["qatari riyal", "qatari riyals", "qar"]},
+  RSD: {symbol: "", names: ["serbian dinar", "serbian dinars", "rsd"]},
+  RUB: {symbol: "₽", names: ["russian ruble", "russian rubles", "ruble", "rubles", "rouble", "roubles", "rub"]},
+  RWF: {symbol: "", names: ["rwandan franc", "rwandan francs", "rwf"], decimals: 0},
+  SAR: {symbol: "", names: ["saudi riyal", "saudi riyals", "riyal", "riyals", "saudi riyal", "saudi riyals", "sar"]},
+  SBD: {symbol: "", names: ["solomon islands dollar", "solomon islands dollars", "sbd"]},
+  SCR: {symbol: "", names: ["seychellois rupee", "seychellois rupees", "scr"]},
+  SDG: {symbol: "", names: ["sudanese pound", "sudanese pounds", "sdg"]},
+  SHP: {symbol: "", names: ["saint helenian pound", "saint helenian pounds", "shp"]},
+  SLE: {symbol: "", names: ["new leone", "new leones", "sle"]},
+  SOS: {symbol: "", names: ["somali shilling", "somali shillings", "sos"], decimals: 0},
+  SRD: {symbol: "", names: ["surinamese dollar", "surinamese dollars", "srd"]},
+  SSP: {symbol: "", names: ["south sudanese pound", "south sudanese pounds", "ssp"]},
+  STN: {symbol: "", names: ["são tomé and príncipe second dobra", "são tomé and príncipe second dobras", "stn"]},
+  SVC: {symbol: "", names: ["salvadoran colón", "salvadoran colóns", "svc"]},
+  SYP: {symbol: "", names: ["syrian pound", "syrian pounds", "syp"], decimals: 0},
+  SZL: {symbol: "", names: ["swazi lilangeni", "swazi lilangenis", "szl"]},
+  TJS: {symbol: "", names: ["tajikistani somoni", "tajikistani somonis", "tjs"]},
+  TMT: {symbol: "", names: ["turkmenistani manat", "turkmenistani manats", "tmt"]},
+  TND: {symbol: "", names: ["tunisian dinar", "tunisian dinars", "tnd"]},
+  TOP: {symbol: "", names: ["tongan paʻanga", "tongan paʻangas", "top"]},
+  TTD: {symbol: "", names: ["trinidad and tobago dollar", "trinidad and tobago dollars", "ttd"]},
+  TWD: {symbol: "", names: ["new taiwan dollar", "new taiwan dollars", "taiwan dollar", "taiwan dollars", "ntd", "twd"]},
+  TZS: {symbol: "", names: ["tanzanian shilling", "tanzanian shillings", "tzs"]},
+  UAH: {symbol: "₴", names: ["ukrainian hryvnia", "ukrainian hryvnias", "hryvnia", "hryvnias", "hryvnya", "uah"]},
+  UGX: {symbol: "", names: ["ugandan shilling", "ugandan shillings", "ugx"], decimals: 0},
+  UYU: {symbol: "", names: ["uruguayan peso", "uruguayan pesos", "uyu"]},
+  UZS: {symbol: "", names: ["uzbekistan som", "uzbekistan soms", "uzs"], decimals: 0},
+  VES: {symbol: "", names: ["venezuelan bolívar soberano", "venezuelan bolívar soberanos", "ves"]},
+  VND: {symbol: "₫", names: ["vietnamese đồng", "vietnamese đồngs", "dong", "vnd"], decimals: 0},
+  VUV: {symbol: "", names: ["vanuatu vatu", "vanuatu vatus", "vuv"], decimals: 0},
+  WST: {symbol: "", names: ["samoan tala", "samoan talas", "wst"]},
+  XAF: {symbol: "", names: ["central african cfa franc", "central african cfa francs", "xaf"], decimals: 0},
+  XAG: {symbol: "", names: ["silver troy ounce", "silver troy ounces", "silver ounce", "silver ounces", "ounce of silver", "ounces of silver", "xag"]},
+  XAU: {symbol: "", names: ["gold troy ounce", "gold troy ounces", "gold ounce", "gold ounces", "ounce of gold", "ounces of gold", "xau"]},
+  XCD: {symbol: "", names: ["east caribbean dollar", "east caribbean dollars", "xcd"]},
+  XCG: {symbol: "", names: ["caribbean guilder", "caribbean guilders", "xcg"]},
+  XDR: {symbol: "", names: ["special drawing rights", "xdr"]},
+  XOF: {symbol: "", names: ["west african cfa franc", "west african cfa francs", "xof"], decimals: 0},
+  XPD: {symbol: "", names: ["palladium", "xpd"]},
+  XPF: {symbol: "", names: ["cfp franc", "cfp francs", "xpf"], decimals: 0},
+  XPT: {symbol: "", names: ["platinum", "xpt"]},
+  XRP: {symbol: "", names: ["xrp", "ripple", "xrp"], crypto: true},
+  YER: {symbol: "", names: ["yemeni rial", "yemeni rials", "yer"]},
+  ZMW: {symbol: "", names: ["zambian kwacha", "zambian kwachas", "zmw"]},
+  ZWG: {symbol: "", names: ["zimbabwe gold", "zimbabwe golds", "zwg"]}
+}
+for (var _mc in MORE_CURRENCIES) CURRENCIES[_mc] = MORE_CURRENCIES[_mc]
+var CURRENCY_SYMBOLS = { "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR", "₩": "KRW", "₺": "TRY", "₪": "ILS",
+  "₽": "RUB", "₴": "UAH", "₦": "NGN", "₫": "VND", "฿": "THB", "₱": "PHP", "₿": "BTC", "₡": "CRC", "₲": "PYG", "₵": "GHS",
+  "₸": "KZT", "₭": "LAK", "₮": "MNT", "₼": "AZN", "₾": "GEL" }
+// Dollars with a country prefix: CA$100, A$20, NT$500.
+var PREFIXED_DOLLARS = { "US": "USD", "CA": "CAD", "C": "CAD", "AU": "AUD", "A": "AUD", "NZ": "NZD", "HK": "HKD", "S": "SGD", "NT": "TWD", "R": "BRL", "MX": "MXN" }
 for (var _code in CURRENCIES) {
   var _c = CURRENCIES[_code]
   var _cu = def([_code], [], { C: 1 }, 0, { currency: _code })
   _cu.name = _code; _cu.plural = _code
-  for (var _n = 0; _n < _c.names.length; _n++) UNIT_NAMES[_c.names[_n]] = _cu
+  for (var _n = 0; _n < _c.names.length; _n++) {
+    var _w = _c.names[_n]
+    // A new code as a word ("all", "top", "mad") would read English as money;
+    // "100 all" still works, since a lowercase code after a number does.
+    if (MORE_CURRENCIES[_code] && _w === _code.toLowerCase()) continue
+    if (!UNIT_NAMES[_w] || UNIT_NAMES[_w].currency) UNIT_NAMES[_w] = _cu
+  }
 }
 
 // Words that read as units only right after a number ("5 in", "3 d").
@@ -492,6 +647,7 @@ function lex(input) {
       tokens.push({ t: "num", v: v })
       i += len; continue
     }
+    if ((m = /^(US|CA|AU|NZ|HK|NT|MX|C|A|S|R)\$/.exec(rest))) { tokens.push({ t: "cur", v: PREFIXED_DOLLARS[m[1]] }); i += m[0].length; continue }
     if (CURRENCY_SYMBOLS[ch]) { tokens.push({ t: "cur", v: CURRENCY_SYMBOLS[ch] }); i++; continue }
     // 5'10": feet and inch marks after a number.
     if ((ch === "'" || ch === "′" || ch === "\"" || ch === "″") && tokens.length && tokens[tokens.length - 1].t === "num") {
@@ -557,6 +713,10 @@ var CSS_PX_PER_M = 96 / 0.0254    // CSS: 1in = 96px
 
 function convert(value, unit) {
   if (!value.unit) throw new CalcError("nothing to convert")
+  if (value.unit === unit || (value.unit.currency && value.unit.currency === unit.currency)) return num(value.n, unit)
+  // Beside money, "pounds" are sterling: "100 dollars in pounds". [D]
+  if (value.unit === UNITS.lb && unit.currency) value = num(value.n, UNITS.GBP)
+  if (value.unit.currency && unit === UNITS.lb) unit = UNITS.GBP
   if (value.unit === unit || (value.unit.currency && value.unit.currency === unit.currency)) return num(value.n, unit)
   // "16 oz to ml" means fluid ounces. [D]
   if (value.unit === UNITS.oz && dimsKey(unit.dims) === "L3") value = num(value.n, UNITS.floz)
@@ -1294,7 +1454,8 @@ function present(v, state) {
   if (v.unit && v.unit.currency) {
     var c = CURRENCIES[v.unit.currency]
     var places = c.decimals === undefined ? 2 : c.decimals
-    var amount = fixed(v.n, places)
+    // Crypto to significant figures: 0.00123 BTC, not 0.00.
+    var amount = c.crypto ? trimNumber(Number(v.n.toPrecision(Math.abs(v.n) >= 1 ? 8 : 4))) : fixed(v.n, places)
     var shown = c.symbol ? (amount.charAt(0) === "-" ? "-" + c.symbol + group(amount.slice(1)) : c.symbol + group(amount)) : group(amount) + " " + v.unit.currency
     return { display: shown, copy: shown.replace(/,/g, ""), caption: currencyName(v.unit.currency) }
   }
@@ -1382,6 +1543,23 @@ function numberWords(n) {
   return titleCase((n < 0 ? "minus " : "") + parts.join(" "))
 }
 
+// The currency of a locale ("en_US" -> USD), for the "Automatic" home
+// currency; "" when its country isn't listed. [D]
+var EURO_COUNTRIES = ["AT", "BE", "HR", "CY", "EE", "FI", "FR", "DE", "GR", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PT", "SK", "SI", "ES"]
+var COUNTRY_CURRENCIES = {
+  US: "USD", GB: "GBP", CA: "CAD", AU: "AUD", NZ: "NZD", IN: "INR", JP: "JPY", CN: "CNY", KR: "KRW", BR: "BRL", MX: "MXN",
+  CH: "CHF", SE: "SEK", NO: "NOK", DK: "DKK", PL: "PLN", CZ: "CZK", HU: "HUF", RO: "RON", IS: "ISK", TR: "TRY", ZA: "ZAR",
+  IL: "ILS", SG: "SGD", HK: "HKD", TH: "THB", PH: "PHP", ID: "IDR", MY: "MYR", RU: "RUB", UA: "UAH", AE: "AED", SA: "SAR",
+  AR: "ARS", CL: "CLP", CO: "COP", PE: "PEN", NG: "NGN", EG: "EGP", VN: "VND", TW: "TWD", PK: "PKR", BD: "BDT", KE: "KES",
+  MA: "MAD", QA: "QAR", KW: "KWD", BG: "BGN", RS: "RSD", KZ: "KZT", GE: "GEL", LK: "LKR", NP: "NPR"
+}
+function localeCurrency(localeName) {
+  var country = String(localeName || "").split(/[_.@-]/)[1] || ""
+  if (EURO_COUNTRIES.indexOf(country) >= 0) return "EUR"
+  var code = COUNTRY_CURRENCIES[country] || ""
+  return CURRENCIES[code] ? code : ""
+}
+
 // ------------------------------------------------------------------- API
 
 var KIND_CAPTIONS = { math: "Expression", percentage: "Percentage", date: "Date", base: "Number", unix: "Date" }
@@ -1436,6 +1614,18 @@ function evaluate(query, env) {
       state.fromUnit = value.unit
       state.toUnit = other
       value = convert(value, other)
+      state.ops++
+    }
+    // A lone amount of money converts to your currency, or from it to your
+    // second one (env.homeCurrency, env.secondCurrency). [D]
+    if (state.ops === 0 && value.type === "num" && value.unit && value.unit.currency && !value.pct && /\d/.test(q)) {
+      var home = ENV.homeCurrency, second = ENV.secondCurrency
+      var to = value.unit.currency === home ? second : home
+      if (!to || to === value.unit.currency || !UNITS[to] || !UNITS[to].currency) return null
+      state.kind = "currency"
+      state.fromUnit = value.unit
+      state.toUnit = UNITS[to]
+      value = convert(value, UNITS[to])
       state.ops++
     }
     // 1e6 on its own shows its value; other bare numbers don't.
@@ -1494,6 +1684,8 @@ if (typeof module !== "undefined") {
     lex: lex,
     words: numberWords,
     zoneList: zoneList,
+    localeCurrency: localeCurrency,
+    currencyName: currencyName,
     pushHistory: pushHistory,
     filterHistory: filterHistory,
     HISTORY_LIMIT: HISTORY_LIMIT,

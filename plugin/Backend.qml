@@ -188,8 +188,21 @@ Item {
       rates: backend.config.currencyRates ? calculatorData.rates : null,
       zones: calculatorData.zones,
       remToPxRate: backend.config.remToPxRate,
-      workHoursPerDay: backend.config.workHoursPerDay
+      workHoursPerDay: backend.config.workHoursPerDay,
+      homeCurrency: backend.homeCurrency(),
+      secondCurrency: backend.secondCurrency()
     }
+  }
+
+  // Where a lone amount of money converts to (config homeCurrency/secondCurrency).
+  function homeCurrency() {
+    var set = backend.config.homeCurrency
+    return set && set !== "auto" ? set : (Calculator.localeCurrency(Qt.locale().name) || "USD")
+  }
+  function secondCurrency() {
+    var set = backend.config.secondCurrency
+    if (set && set !== "auto") return set
+    return backend.homeCurrency() === "EUR" ? "USD" : "EUR"
   }
 
   function calculate(query) {
@@ -1479,6 +1492,16 @@ Item {
           date: r ? r.date : null,
           base: r ? r.base : null,
           currencies: r ? Object.keys(r.rates).concat([r.base]).sort() : [],
+          // {code: "US Dollar (USD)"} for every currency with a rate.
+          names: (function() {
+            var out = ({})
+            var codes = r ? Object.keys(r.rates).concat([r.base]) : []
+            for (var i = 0; i < codes.length; i++) if (Calculator.CURRENCIES[codes[i]]) out[codes[i]] = Calculator.currencyName(codes[i])
+            return out
+          })(),
+          home: backend.homeCurrency(),
+          second: backend.secondCurrency(),
+          locale: Qt.locale().name,
           fetchedAt: calculatorData.ratesFetchedAt || null,
           zones: Object.keys(calculatorData.zones).length
         }

@@ -140,7 +140,7 @@ Works:
   - arithmetic and functions
   - Soulver-style percentages (`$30 + 20%`, `20% off 50`, `50 as a % of 200`)
   - ~250 units (`5 ft to cm`, `60 mph * 2 h`, `16px to rem`)
-  - currencies (ECB rates from frankfurter.dev, cached daily in `~/.cache/oma-cast/currencies.json`; turn off with `"currencyRates": false` in config.json)
+  - currencies (fork: Frankfurter's v2 `/rates`, about 170 currencies with Bitcoin, Ethereum and metals; v1 had the ECB's 30. Cached daily in `~/.cache/oma-cast/currencies.json`; turn off with `"currencyRates": false` in config.json)
   - dates (`3 days from now`, `days until christmas`)
   - time zones (`time in tokyo`, `3pm london to nyc`; offsets come from one bash `printf %(%z)T` pass because QML has no Intl)
   - bases (`255 to hex`)
@@ -180,13 +180,15 @@ Works:
 - Data: `data.backup` writes one JSON document (settings, commands, snippets, quicklinks, emoji usage) through the export process; `data.restore` replaces settings and imports the rest.
 - `tests/qml-lint.test.js` catches a function named `<property>Changed`, which stops a QML file loading (it took the plugin down once).
 
+**Money (fork, 2026-10-26):** rates come from Frankfurter v2 (`CalculatorData.validRates` flattens its list; a cached v1 file is refetched once). `MORE_CURRENCIES` in Calculator.js holds the extra codes with Frankfurter's names plus curated words (dirham, riyal, ruble, hryvnia, naira, dong, bitcoin…; not peso, dinar or shilling, which several countries share), and crypto shows significant figures. A lone amount converts to `homeCurrency`, or from it to `secondCurrency` (config.json; "auto" is `Calculator.localeCurrency(Qt.locale().name)`, then EUR, or USD for euro users). Beside money, "pounds" are GBP. CA$, A$, NZ$, HK$, S$, NT$, R$, MX$ and US$ are prefixed dollars.
+
 Stubbed / not yet:
 - Snippet keyword expansion in other apps (SPEC §5.4) needs evdev/uinput access; not built.
 - No deep links (`oma-cast://`); Phase 2 or 9.
 
 Won't do (decided 2026-10-22):
 - Keystroke buffering. Keys sent within ~40 ms of the hotkey go to the window underneath; fixing it needs a parked surface, which Omarchy avoids (SPEC §12 Phase 1).
-- Calculator: Color, Weather and Flight results, crypto, pinned history entries and a history detail pane. Trig takes radians unless given `°`/`deg` [D].
+- Calculator: Color, Weather and Flight results, pinned history entries and a history detail pane. Trig takes radians unless given `°`/`deg` [D].
 
 Deviations from the original spec (SPEC §2.0 and the Phase 1 note in §12):
 - A Quickshell plugin instead of Tauri + Node; there's no NDJSON supervisor until Phase 5.

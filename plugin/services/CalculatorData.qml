@@ -22,23 +22,41 @@ Item {
   property bool cacheRead: false
   property var request: null
 
-  readonly property string ratesUrl: "https://api.frankfurter.dev/v1/latest"
+  // v2: ~170 currencies (v1 had the ECB's 30), as [{base, quote, rate, date}].
+  readonly property string ratesUrl: "https://api.frankfurter.dev/v2/rates"
   readonly property double ratesMaxAgeMs: 12 * 3600 * 1000     // ECB publishes once a working day
   readonly property double retryAfterMs: 30 * 60 * 1000
   readonly property double zonesMaxAgeMs: 10 * 60 * 1000       // catches DST switches
 
   signal message(string level, string text, var metadata)
 
+  // A cache from v1 (30 currencies) is refetched once rather than waiting a day.
+  function fewCurrencies() {
+    return !!data.rates && Object.keys(data.rates.rates).length < 60
+  }
+
   // Cheap; called on every launcher open.
   function refresh() {
     var now = Date.now()
     if (now - data.zonesAt > data.zonesMaxAgeMs && !zoneProcess.running) zoneProcess.running = true
     if (data.ratesEnabled && data.cacheRead && !data.request
-        && now - data.ratesFetchedAt > data.ratesMaxAgeMs && now - data.ratesTriedAt > data.retryAfterMs)
+        && (now - data.ratesFetchedAt > data.ratesMaxAgeMs || data.fewCurrencies()) && now - data.ratesTriedAt > data.retryAfterMs)
       data.fetchRates()
   }
 
   function validRates(doc) {
+    // v2's list, or the {base, date, rates} the cache and v1 use.
+    if (Array.isArray(doc)) {
+      var rows = doc.filter(function(r) { return r && typeof r.quote === "string" && typeof r.base === "string" })
+      if (!rows.length) return null
+      var flat = { base: rows[0].base, date: "", rates: {} }
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].base !== flat.base) continue
+        flat.rates[rows[i].quote] = rows[i].rate
+        if (String(rows[i].date || "") > flat.date) flat.date = String(rows[i].date)
+      }
+      doc = flat
+    }
     if (!doc || typeof doc.base !== "string" || !doc.rates || typeof doc.rates !== "object") return null
     var out = {}
     for (var code in doc.rates) if (/^[A-Z]{3}$/.test(code) && typeof doc.rates[code] === "number" && doc.rates[code] > 0) out[code] = doc.rates[code]

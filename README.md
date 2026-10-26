@@ -129,7 +129,10 @@ Import and export use Raycast's JSON format, `[{name, text, keyword?}]`.
 
 Type a calculation in root search. An amount and a unit on their own convert
 to the obvious counterpart: `16rem` → 256 px, `5 kg` → 11.02 lb, `100 f` →
-37.78 °C, `5'10"` → 177.8 cm. Name a target with `to`/`in`: `180 cm in feet
+37.78 °C, `5'10"` → 177.8 cm. Money works the same way: `€50` converts to your currency
+and `$100` to your second one (Settings → Calculator; both follow your locale
+by default). About 170 currencies, Bitcoin and gold included: `100 usd to aed`,
+`50 dirhams to usd`, `CA$100`, `1 btc`, `100 dollars in pounds`. Name a target with `to`/`in`: `180 cm in feet
 and inches`, `1 gb to mb`, `16 oz to ml`, `1in to px`, `0 c in k`. Currencies,
 dates, time zones, bases and percentages work too. ↵ copies the answer.
 

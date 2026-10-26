@@ -10,7 +10,7 @@ SettingsPage {
   required property var host
 
   title: "Calculator"
-  description: "Type a calculation in the root search: units, currencies, dates, time zones, bases and percentages."
+  description: "Type a calculation in the root search: units, currencies, dates, time zones, bases and percentages. An amount on its own converts too: “16rem”, “5 kg”, “€50”."
 
   readonly property var currencies: {
     page.backend.calculatorRevision
@@ -24,6 +24,14 @@ SettingsPage {
   }
   property bool confirmClear: false
 
+  // "Automatic (US Dollar (USD))", then every currency with a rate.
+  function currencyOptions(automatic) {
+    var names = page.currencies.names || ({})
+    var codes = Object.keys(names).sort(function(a, b) { return names[a] < names[b] ? -1 : 1 })
+    return [{ value: "auto", label: "Automatic" + (automatic ? " (" + (names[automatic] || automatic) + ")" : "") }]
+      .concat(codes.map(function(c) { return { value: c, label: names[c] } }))
+  }
+
   function setConfig(patch) {
     var r = page.backend.callSync("settings.updateConfig", patch)
     if (!r.ok) page.host.flash(r.error, true)
@@ -34,7 +42,7 @@ SettingsPage {
       look: page.look
       label: "Currency conversion"
       description: page.backend.config.currencyRates
-        ? (page.currencies.date ? "Daily ECB rates from frankfurter.dev, last " + page.currencies.date + " (" + page.currencies.currencies.length + " currencies)." : "Daily ECB rates from frankfurter.dev, not fetched yet.")
+        ? (page.currencies.date ? "Daily rates from frankfurter.dev, last " + page.currencies.date + " (" + page.currencies.currencies.length + " currencies, Bitcoin and gold included)." : "Daily rates from frankfurter.dev, not fetched yet.")
         : "Off: oma-cast makes no network requests."
       Row {
         spacing: Style.space(10)
@@ -52,6 +60,32 @@ SettingsPage {
           checked: !!page.backend.config.currencyRates
           onToggled: page.setConfig({ currencyRates: !page.backend.config.currencyRates })
         }
+      }
+    }
+    SettingRow {
+      look: page.look
+      label: "Your currency"
+      description: "An amount on its own (“€50”, “100 cad”) converts to this. Automatic follows your locale (" + (page.currencies.locale || "") + ")."
+      SearchableDropdown {
+        width: Style.space(280)
+        showLabel: false
+        placeholderText: "Search currencies…"
+        options: page.currencyOptions(page.currencies.home)
+        value: page.backend.config.homeCurrency || "auto"
+        onChanged: function(v) { page.setConfig({ homeCurrency: v }) }
+      }
+    }
+    SettingRow {
+      look: page.look
+      label: "Second currency"
+      description: "An amount already in your currency (“$100”) converts to this."
+      SearchableDropdown {
+        width: Style.space(280)
+        showLabel: false
+        placeholderText: "Search currencies…"
+        options: page.currencyOptions(page.currencies.second)
+        value: page.backend.config.secondCurrency || "auto"
+        onChanged: function(v) { page.setConfig({ secondCurrency: v }) }
       }
     }
     SettingRow {

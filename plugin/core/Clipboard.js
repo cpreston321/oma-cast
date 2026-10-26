@@ -82,10 +82,11 @@ function searchText(entry) {
   return (String(entry.text || "") + " " + preview(entry)).toLowerCase()
 }
 
-function filter(entries, query) {
+function filter(entries, query, limit) {
+  var max = typeof limit === "number" && limit > 0 ? limit : MAX_ROWS
   var needle = String(query || "").trim().toLowerCase()
   var out = []
-  for (var i = 0; i < entries.length && out.length < MAX_ROWS; i++) {
+  for (var i = 0; i < entries.length && out.length < max; i++) {
     if (!needle || searchText(entries[i]).indexOf(needle) >= 0) out.push(entries[i])
   }
   return out
@@ -102,8 +103,8 @@ function candidate(entry) {
   }
 }
 
-function sections(entries, query) {
-  var list = filter(entries, query)
+function sections(entries, query, limit) {
+  var list = filter(entries, query, limit)
   return list.length ? [{ id: "clipboard", title: "", rows: list.map(function(e) { return { candidate: candidate(e), record: null } }) }] : []
 }
 

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
+import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -130,7 +131,42 @@ PanelWindow {
   property int emojiCol: 0
   readonly property int emojiColumns: Math.max(6, Math.floor((window.cardWidth - window.px(32)) / window.px(62)))
   onEmojiColumnsChanged: if (window.emojiView) window.rebuild(false)
+  // Compact mode shows just the search bar, or with "favorites in compact
+  // mode" on, the favorites under it when there are any.
+  readonly property bool favoritesInCompact: window.general.windowMode === "compact" && !!window.general.showFavoritesInCompactMode
   readonly property bool compact: window.general.windowMode === "compact" && window.atRoot && !window.query
+    && !(window.favoritesInCompact && rows.count > 0)
+
+  // Which monitor it opens on (windowPresentationMode): the focused one, or
+  // the one under the pointer (`hyprctl cursorpos`, which corrects the guess).
+  property var targetScreen: null
+  screen: window.targetScreen
+
+  function pickScreen() {
+    var focused = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    var screens = Quickshell.screens
+    for (var i = 0; i < screens.length; i++) if (screens[i].name === focused) window.targetScreen = screens[i]
+    if (window.general.windowPresentationMode !== "focused-screen" && screens.length > 1) cursorProc.running = true
+  }
+
+  Process {
+    id: cursorProc
+    command: ["hyprctl", "cursorpos", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var p
+        try { p = JSON.parse(text) } catch (e) { return }
+        var screens = Quickshell.screens
+        for (var i = 0; i < screens.length; i++) {
+          var s = screens[i]
+          if (p.x >= s.x && p.x < s.x + s.width && p.y >= s.y && p.y < s.y + s.height) {
+            if (window.targetScreen !== s) window.targetScreen = s
+            return
+          }
+        }
+      }
+    }
+  }
   // Editor views (alias, quicklink form, import, a script menu's input prompt)
   // take the header text as input instead of searching; a form edits its
   // focused field there.
@@ -254,7 +290,8 @@ PanelWindow {
     if (window.pickingApp) { window.fillOpenWithRows(); return }
     if (window.editor) { window.select(-1); return }
     if (window.emojiView) { window.rebuildEmoji(keepId); return }
-    var result = window.backend.callSync("rootSearch.search", { query: window.query, view: window.view, filter: window.atRoot ? window.rootFilter : "all" })
+    var result = window.backend.callSync("rootSearch.search", { query: window.query, view: window.view, filter: window.atRoot ? window.rootFilter : "all",
+      onlyFavorites: window.atRoot && !window.query && window.favoritesInCompact })
     if (!result.ok) {
       window.showToast("failure", result.error)
       window.select(-1)
@@ -1048,7 +1085,11 @@ PanelWindow {
   BorderSurface {
     id: card
     width: window.cardWidth
-    height: window.compact ? window.headerHeight + card.borderTop + card.borderBottom : window.fullHeight
+    // Favorites under a compact bar take only the room they need.
+    height: window.compact ? window.headerHeight + card.borderTop + card.borderBottom
+      : (window.favoritesInCompact && window.atRoot && !window.query
+        ? Math.min(window.fullHeight, window.headerHeight + window.footerHeight + list.contentHeight + window.px(8) + card.borderTop + card.borderBottom)
+        : window.fullHeight)
     // Follow Hyprland like the native HUD: Style.cornerRadius already
     // mirrors `decoration:rounding` (see omarchy Style.qml).
     radius: Style.cornerRadius
@@ -1440,7 +1481,7 @@ PanelWindow {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onPositionChanged: function(mouse) { if (!window.actionPanelOpen && pointerGate.moved(cell, mouse)) window.selectEmoji(gridRow.index, cell.index) }
-                  onClicked: { window.selectEmoji(gridRow.index, cell.index); window.perform("paste") }
+                  onClicked: { window.selectEmoji(gridRow.index, cell.index); window.perform("open") }
                 }
               }
             }

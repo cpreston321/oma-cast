@@ -271,16 +271,27 @@ function urlRows(url) {
   })
 }
 
-function fallbackRows(query) {
-  return FALLBACKS.map(function(f) {
-    return {
-      candidate: {
-        id: f.id, type: "command", kind: "fallback", title: f.title, subtitle: f.subtitle || query,
-        typeLabel: "Fallback", glyph: f.icon, url: f.url, rootSearch: { when: "searching" }
-      },
-      record: null
+// "Use <query> with…" rows. order: the fallbacks setting (ids, or
+// "quicklink:<id>"); quicklinks: {id: name} for the saved ones. Without an
+// order, the built-in three.
+function fallbackRows(query, order, quicklinks) {
+  var ids = Array.isArray(order) ? order : FALLBACKS.map(function(f) { return f.id })
+  var out = []
+  for (var i = 0; i < ids.length; i++) {
+    var f = FALLBACKS.filter(function(x) { return x.id === ids[i] })[0]
+    var candidate = null
+    if (f) {
+      candidate = { id: f.id, type: "command", kind: "fallback", title: f.title, subtitle: f.subtitle || query,
+        typeLabel: "Fallback", glyph: f.icon, url: f.url, rootSearch: { when: "searching" } }
+    } else if (ids[i].indexOf("quicklink:") === 0 && quicklinks && quicklinks[ids[i].slice(10)]) {
+      var qid = ids[i].slice(10)
+      // Its own id: the same quicklink may also be a row under Results.
+      candidate = { id: "fallback-quicklink:" + qid, type: "command", kind: "fallback", title: quicklinks[qid], subtitle: query,
+        typeLabel: "Fallback", glyph: "\uf0c1", quicklinkId: qid, rootSearch: { when: "searching" } }
     }
-  })
+    if (candidate) out.push({ candidate: candidate, record: null })
+  }
+  return out
 }
 
 // The inline Calculator row (SPEC §7.2 "Calculator" section) for a
@@ -367,7 +378,8 @@ function rootSections(candidates, query, ctx, deps) {
     if (url) sections.push({ id: "url", title: "Link", rows: urlRows(url) })
     var files = filtered ? [] : (ctx.files || [])
     if (files.length > 0) sections.push({ id: "files", title: "Files", rows: files.map(function(c) { return { candidate: c, record: null } }) })
-    if (!filtered) sections.push({ id: "fallback-commands", title: "Use “" + q + "” with…", rows: fallbackRows(q) })
+    var fallbacks = filtered ? [] : fallbackRows(q, ctx.fallbacks, ctx.fallbackQuicklinks)
+    if (fallbacks.length) sections.push({ id: "fallback-commands", title: "Use “" + q + "” with…", rows: fallbacks })
     return sections
   }
 
@@ -376,9 +388,11 @@ function rootSections(candidates, query, ctx, deps) {
   var favorites = shown.filter(function(c) { return c.favoriteOrder !== null })
     .sort(function(a, b) { return a.favoriteOrder - b.favoriteOrder })
   favorites.forEach(function(c) { taken[c.id] = true })
+  // Compact mode with "favorites in compact mode" on shows just these. [D]
+  if (ctx.onlyFavorites) return favorites.length ? [{ id: "favorites", title: "Favorites", rows: favorites.map(function(c) { return { candidate: c, record: null } }) }] : []
 
   var suggestions = deps.Ranker.rank(decorated.filter(function(c) { return !taken[c.id] && c.frecency > 1 }), "", opts)
-    .slice(0, SUGGESTIONS_LIMIT)
+    .slice(0, typeof ctx.suggestionsLimit === "number" ? ctx.suggestionsLimit : SUGGESTIONS_LIMIT)
   suggestions.forEach(function(r) { taken[r.candidate.id] = true })
 
   var rest = shown.filter(function(c) { return !taken[c.id] })
@@ -446,7 +460,30 @@ function snippetSections(candidates, query, ctx, deps) {
   return ranked.length ? [{ id: "results", title: "Results", rows: ranked }] : []
 }
 
-function actionsFor(candidate) {
+// Puts the preferred of a paste/copy pair first and gives it ↵; the other
+// takes Ctrl ↵. prefs: {clipboard, emoji, snippet, calculator}: "paste"|"copy".
+function preferPrimary(list, pasteId, copyId, wantCopy) {
+  if (list.length < 2) return list
+  var ids = [list[0].id, list[1].id]
+  if (ids.indexOf(pasteId) < 0 || ids.indexOf(copyId) < 0) return list
+  if ((list[0].id === copyId) === !!wantCopy) return list
+  var first = Object.assign({}, list[1], { shortcut: list[0].shortcut, section: list[0].section })
+  var second = Object.assign({}, list[0], { shortcut: list[1].shortcut, section: list[1].section })
+  return [first, second].concat(list.slice(2))
+}
+
+function actionsFor(candidate, prefs) {
+  var p = prefs || {}
+  var list = baseActions(candidate)
+  if (candidate.kind === "emoji") return preferPrimary(list, "paste", "copy", p.emoji === "copy")
+  if (candidate.kind === "clipboard") return preferPrimary(list, "paste", "copy", p.clipboard === "copy")
+  if (candidate.kind === "snippet") return preferPrimary(list, "paste-snippet", "copy-snippet", p.snippet === "copy")
+  if (candidate.kind === "calculator" || candidate.kind === "calculator-history")
+    return preferPrimary(list, "paste-answer", "copy-answer", p.calculator !== "paste")
+  return list
+}
+
+function baseActions(candidate) {
   if (candidate.kind === "file" || candidate.kind === "folder") return fileActions(candidate)
   if (candidate.kind === "emoji") {
     return [
@@ -488,7 +525,7 @@ function actionsFor(candidate) {
     case "omarchy-menu":
     case "omarchy-link": primary = { id: "open", title: "Open Menu", icon: "" }; break
     case "quicklink": primary = { id: "open", title: "Open Quicklink", icon: "" }; break
-    case "snippet": primary = { id: "open", title: "Paste Snippet", icon: "\uf0ea" }; break
+    case "snippet": primary = { id: "paste-snippet", title: "Paste Snippet", icon: "\uf0ea" }; break
     case "url-open":
     case "url-create": primary = { id: "open", title: candidate.title, icon: "" }; break
     case "fallback": primary = { id: "open", title: candidate.title, icon: "" }; break

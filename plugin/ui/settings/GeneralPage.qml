@@ -13,6 +13,8 @@ SettingsPage {
   title: "General"
   description: "How the launcher looks and behaves. Changes apply immediately."
 
+  readonly property bool hotkeysLoaded: page.backend.hotkeysLoaded
+
   readonly property var general: {
     page.backend.storeRevision
     var r = page.backend.ready ? page.backend.callSync("settings.getGeneralSettings", null) : null
@@ -32,12 +34,44 @@ SettingsPage {
   SettingsForm {
     SettingRow {
       look: page.look
+      label: "Launcher hotkey"
+      description: page.hotkeysLoaded ? "Opens and closes oma-cast. Click, then press the keys."
+        : "Saved to ~/.config/hypr/oma-cast.lua, which Hyprland doesn't load yet: run oma-cast setup hyprland."
+      HotkeyField {
+        host: page.host
+        look: page.look
+        value: page.general.launcherHotkey || ""
+        placeholder: "None"
+        onChanged: function(hotkey) { page.host.assignHotkey("launcher", hotkey) }
+      }
+    }
+    SettingRow {
+      look: page.look
+      label: "Open on"
+      description: "Which monitor the launcher appears on."
+      ButtonGroup {
+        options: [{ value: "mouse-screen", label: "Under the mouse" }, { value: "focused-screen", label: "Focused monitor" }]
+        value: page.general.windowPresentationMode || "mouse-screen"
+        onChanged: function(v) { page.setGeneral({ windowPresentationMode: v }) }
+      }
+    }
+    SettingRow {
+      look: page.look
       label: "Window mode"
       description: "Compact shows only the search bar until you start typing."
       ButtonGroup {
         options: [{ value: "expanded", label: "Expanded" }, { value: "compact", label: "Compact" }]
         value: page.general.windowMode || "expanded"
         onChanged: function(v) { page.setGeneral({ windowMode: v }) }
+      }
+    }
+    SettingRow {
+      look: page.look
+      label: "Favorites in compact mode"
+      description: "In compact mode, show your favorites under the search bar."
+      ToggleSwitch {
+        checked: !!page.general.showFavoritesInCompactMode
+        onToggled: page.setGeneral({ showFavoritesInCompactMode: !page.general.showFavoritesInCompactMode })
       }
     }
     SettingRow {
@@ -116,33 +150,11 @@ SettingsPage {
     }
     SettingRow {
       look: page.look
-      label: "Search sensitivity"
-      description: "How loosely a query may match: Low needs closer matches."
-      ButtonGroup {
-        options: [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }]
-        value: page.general.rootSearchSensitivity || "medium"
-        onChanged: function(v) { page.setGeneral({ rootSearchSensitivity: v }) }
-      }
-    }
-    SettingRow {
-      look: page.look
       label: "Stay open when focus moves away"
       description: "Clicking outside the launcher leaves it open."
       ToggleSwitch {
         checked: !!page.backend.config.keepVisibleOnFocusLoss
         onToggled: page.setConfig({ keepVisibleOnFocusLoss: !page.backend.config.keepVisibleOnFocusLoss })
-      }
-    }
-    SettingRow {
-      look: page.look
-      label: "Hotkey"
-      description: "Bound in ~/.config/hypr/bindings.lua with hl.dsp.global(\"oma-cast:toggle\")."
-      Text {
-        textFormat: Text.PlainText
-        text: "Super + Space"
-        color: page.look.foreground
-        font.family: page.look.fontFamily
-        font.pixelSize: Style.font.body
       }
     }
   }

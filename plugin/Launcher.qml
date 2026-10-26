@@ -23,6 +23,7 @@ Item {
     var payload = ({})
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { payload = ({}) }
     var wasOpen = root.opened
+    if (!wasOpen) launcher.pickScreen()
     root.opened = true
     root.openedAt = Date.now()
     launcher.prepare(payload)

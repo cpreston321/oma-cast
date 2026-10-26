@@ -69,3 +69,9 @@ test("rows carry the history index in their id", () => {
   assert.equal(sections[0].rows[1].candidate.id, "clipboard:2")
   assert.deepEqual(C.sections(C.parse(HISTORY), "zzz"), [])
 })
+
+test("the row limit caps the list", () => {
+  const many = JSON.stringify(Array.from({ length: 30 }, (_, i) => ({ type: "text", text: "entry " + i })))
+  assert.equal(C.sections(C.parse(many), "", 10)[0].rows.length, 10)
+  assert.equal(C.sections(C.parse(many), "")[0].rows.length, 30)
+})

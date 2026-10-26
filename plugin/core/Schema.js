@@ -109,14 +109,44 @@ var documents = {
 // collide with another branch's migration number. [D]
 var generalAdditions = {
   windowWidth: 750,                           // launcher card at uiZoom 1, px [O 750×475, SPEC §5.1]
-  windowHeight: 475
+  windowHeight: 475,
+  // Fork settings (Settings window). Hotkeys are Hyprland notation; "" is none.
+  launcherHotkey: "ALT + SPACE",              // what `oma-cast setup hyprland` binds
+  suggestionsLimit: 6,                        // root Suggestions rows; 0 hides the section
+  rootKeybindings: true,                      // Omarchy keybindings in root search
+  rootFiles: true,                            // a Files section in root search
+  fileRootLimit: 5,
+  fileFolders: [],                            // folders file search walks; empty is $HOME
+  fileHidden: false,                          // include hidden files and folders
+  fileExcludes: ["node_modules", "__pycache__"],
+  // "Use <query> with…" rows in order: fallback ids, or "quicklink:<id>".
+  fallbacks: ["fallback:google", "fallback:duckduckgo", "fallback:agent"],
+  // What ↵ (and a click, or `oma-cast run`) does: "paste" or "copy".
+  clipboardPrimary: "paste",
+  emojiPrimary: "paste",
+  snippetPrimary: "paste",
+  calculatorPrimary: "copy",
+  emojiFrequentCount: 16,
+  clipboardRows: 100
 }
 
 // Inclusive bounds for numeric general settings. The card is also clamped to
 // the screen when drawn, so these only reject nonsense. [D]
 var generalRanges = {
   windowWidth: [500, 3000],
-  windowHeight: [300, 2000]
+  windowHeight: [300, 2000],
+  popToRootTimeout: [0, 3600],
+  suggestionsLimit: [0, 20],
+  fileRootLimit: [1, 20],
+  emojiFrequentCount: [0, 64],
+  clipboardRows: [10, 500]
+}
+
+// List-valued general settings: each a list of strings, checked one by one.
+var generalLists = {
+  fileFolders: function(v) { return /^(~|\/)/.test(v) ? null : "Folders must start with / or ~" },
+  fileExcludes: function(v) { return v.trim() && !/[\n\0]/.test(v) ? null : "Exclusions must be non-empty names or globs" },
+  fallbacks: function(v) { return /^(fallback:[a-z0-9-]+|quicklink:[^\s]+)$/.test(v) ? null : "Unknown fallback " + v }
 }
 
 function withGeneralDefaults(general) {
@@ -125,13 +155,26 @@ function withGeneralDefaults(general) {
     for (var k in general) out[k] = general[k]
   }
   for (var key in generalAdditions) {
-    if (typeof out[key] !== typeof generalAdditions[key]) out[key] = generalAdditions[key]
+    var fallback = generalAdditions[key]
+    if (typeof out[key] !== typeof fallback || Array.isArray(out[key]) !== Array.isArray(fallback))
+      out[key] = Array.isArray(fallback) ? fallback.slice() : fallback
   }
   return out
 }
 
 // null when `value` is acceptable for general setting `key`, else the reason.
 function checkGeneralValue(key, value) {
+  var list = generalLists[key]
+  if (list) {
+    if (!Array.isArray(value)) return "Setting " + key + " must be a list"
+    if (value.length > 64) return "Setting " + key + " has too many entries"
+    for (var i = 0; i < value.length; i++) {
+      if (typeof value[i] !== "string") return "Setting " + key + " must be a list of text"
+      var problem = list(value[i])
+      if (problem) return problem
+    }
+    return null
+  }
   var range = generalRanges[key]
   if (!range) return null
   if (typeof value !== "number" || !isFinite(value) || Math.round(value) !== value)
@@ -159,14 +202,20 @@ var configDefaults = {
 
 // Values a config key or general setting may take, beyond its type.
 var configChoices = {
-  clockFormat: ["auto", "12h", "24h"]
+  clockFormat: ["auto", "12h", "24h"],
+  logLevel: ["trace", "debug", "info", "warning", "error", "fatal"]
 }
 
 var generalChoices = {
   windowMode: ["expanded", "compact"],
   escapeKeyBehavior: ["pop-back-or-close", "close-and-pop-to-root"],
   navigationBindings: ["emacs", "vim-motions"],
-  rootSearchSensitivity: ["low", "medium", "high"]
+  rootSearchSensitivity: ["low", "medium", "high"],
+  windowPresentationMode: ["mouse-screen", "focused-screen"],
+  clipboardPrimary: ["paste", "copy"],
+  emojiPrimary: ["paste", "copy"],
+  snippetPrimary: ["paste", "copy"],
+  calculatorPrimary: ["paste", "copy"]
 }
 
 function validConfigValue(key, value) {

@@ -331,3 +331,40 @@ test("actions: apps offer Open New Window on Shift+Enter", () => {
   const openNew = RS.actionsFor(app).find((a) => a.id === "open-new")
   assert.equal(openNew.shortcut, "Shift ↵")
 })
+
+// ---- fork settings (Settings → Search, Paste & Copy)
+
+test("fallbacks follow the setting's order, can be switched off, and take quicklinks", () => {
+  const titles = (c) => (results("zzqx", c).find((s) => s.id === "fallback-commands") || { rows: [] }).rows.map((r) => r.candidate.id)
+  assert.deepEqual(titles(), ["fallback:google", "fallback:duckduckgo", "fallback:agent"])
+  assert.deepEqual(titles(ctx({ fallbacks: ["fallback:agent", "quicklink:ql-1", "quicklink:gone"], fallbackQuicklinks: { "ql-1": "GitHub" } })),
+    ["fallback:agent", "fallback-quicklink:ql-1"], "a deleted quicklink is skipped")
+  assert.equal(results("zzqx", ctx({ fallbacks: [] })).some((s) => s.id === "fallback-commands"), false, "an empty list hides the section")
+})
+
+test("the suggestions limit trims or hides Suggestions", () => {
+  const frecency = {}
+  for (const id of ["builtin:emoji", "builtin:settings", "builtin:search-files"]) frecency[id] = { anchor: NOW / 1000 + 1e5, openedAt: NOW, searchTerms: [] }
+  const count = (limit) => ((results("", ctx({ frecency, suggestionsLimit: limit })).find((s) => s.id === "suggestions") || { rows: [] }).rows.length)
+  assert.equal(count(undefined), 3)
+  assert.equal(count(1), 1)
+  assert.equal(count(0), 0)
+})
+
+test("compact mode with favorites shows only the favorites", () => {
+  const commands = { "omarchy:style": { favoriteOrder: 0 } }
+  const sections = results("", ctx({ commands, onlyFavorites: true }))
+  assert.deepEqual(sections.map((s) => s.id), ["favorites"])
+  assert.deepEqual(results("", ctx({ onlyFavorites: true })), [])
+})
+
+test("paste or copy goes first per preference, taking ↵", () => {
+  const ids = (kind, prefs) => RS.actionsFor({ kind }, prefs).slice(0, 2).map((a) => a.id + " " + a.shortcut)
+  assert.deepEqual(ids("emoji"), ["paste ↵", "copy Ctrl ↵"])
+  assert.deepEqual(ids("emoji", { emoji: "copy" }), ["copy ↵", "paste Ctrl ↵"])
+  assert.deepEqual(ids("clipboard", { clipboard: "copy" }), ["copy ↵", "paste Ctrl ↵"])
+  assert.deepEqual(ids("calculator"), ["copy-answer ↵", "paste-answer Ctrl ↵"], "the calculator copies by default")
+  assert.deepEqual(ids("calculator-history", { calculator: "paste" }), ["paste-answer ↵", "copy-answer Ctrl ↵"])
+  assert.deepEqual(ids("snippet"), ["paste-snippet ↵", "copy-snippet Ctrl ↵"])
+  assert.deepEqual(ids("snippet", { snippet: "copy" }), ["copy-snippet ↵", "paste-snippet Ctrl ↵"])
+})

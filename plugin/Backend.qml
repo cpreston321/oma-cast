@@ -12,6 +12,7 @@ import "core/OmarchyMenu.js" as OmarchyMenu
 import "core/RootSearch.js" as RootSearch
 import "core/Quicklinks.js" as Quicklinks
 import "core/Snippets.js" as Snippets
+import "core/Hotkeys.js" as Hotkeys
 import "core/Agent.js" as Agent
 import "core/Calculator.js" as Calculator
 import "core/Emoji.js" as Emoji
@@ -117,7 +118,7 @@ Item {
       }
       next.push(builtin)
     }
-    next = next.concat(keybindingsSource.rows)
+    if (backend.general.rootKeybindings) next = next.concat(keybindingsSource.rows)
     next = next.concat(backend.scriptCandidates())
     if (quicklinksStore.loaded) next = next.concat(Quicklinks.list(quicklinksStore.doc).map(Quicklinks.toCandidate))
     if (snippetsStore.loaded) next = next.concat(Snippets.list(snippetsStore.doc).map(function(item) { return Snippets.toCandidate(item, snippetsStore.doc, backend.snippetDeps) }))
@@ -134,13 +135,37 @@ Item {
     onTriggered: backend.rebuildCandidates()
   }
 
+  // General settings with every fork default filled in (Schema.withGeneralDefaults).
+  readonly property var general: {
+    backend.storeRevision
+    return Schema.withGeneralDefaults(settingsStore.loaded ? settingsStore.doc.general : null)
+  }
+
+  // {quicklink id: name}, for quicklink fallbacks.
+  function quicklinkNames() {
+    var out = ({})
+    var list = quicklinksStore.loaded ? Quicklinks.list(quicklinksStore.doc) : []
+    for (var i = 0; i < list.length; i++) out[list[i].id] = list[i].name
+    return out
+  }
+
   function searchContext() {
+    var g = backend.general
     return {
       commands: settingsStore.loaded ? settingsStore.doc.commands : ({}),
       frecency: frecencyStore.loaded ? frecencyStore.doc.items : ({}),
       nowMs: Date.now(),
-      sensitivity: settingsStore.loaded ? settingsStore.doc.general.rootSearchSensitivity : "medium"
+      sensitivity: g.rootSearchSensitivity || "medium",
+      suggestionsLimit: g.suggestionsLimit,
+      fallbacks: g.fallbacks,
+      fallbackQuicklinks: backend.quicklinkNames()
     }
+  }
+
+  // What ↵ does for the paste/copy pairs (RootSearch.actionsFor).
+  function primaryPrefs() {
+    var g = backend.general
+    return { clipboard: g.clipboardPrimary, emoji: g.emojiPrimary, snippet: g.snippetPrimary, calculator: g.calculatorPrimary }
   }
 
   function decorated(id) {
@@ -188,8 +213,8 @@ Item {
   // An action on the inline Calculator row or a Calculator History entry.
   // entry: {query, result, copy, kind}; history: whether it is saved already.
   function calculatorAction(action, entry, historyId) {
+    if (action === "open") action = backend.general.calculatorPrimary === "paste" ? "paste-answer" : "copy-answer"
     switch (action) {
-      case "open":
       case "copy-answer":
         if (!historyId) backend.saveCalculation(entry)
         Util.execArgv(["wl-copy", "--", entry.copy])
@@ -227,7 +252,8 @@ Item {
   // ------------------------------------------------- emoji and clipboard
 
   function emojiAction(action, emoji) {
-    if (action === "open" || action === "paste") {
+    if (action === "open") action = backend.general.emojiPrimary
+    if (action === "paste") {
       emojiStore.update(function(doc) { doc.usage = Emoji.recordUsage(doc.usage, emoji, Date.now()) })
       // Omarchy's own insert: copies, waits for our window to unmap, types.
       Util.execArgv(["omarchy-menu-emoji-insert", emoji])
@@ -248,8 +274,8 @@ Item {
   }
 
   function clipboardAction(action, entry) {
+    if (action === "open") action = backend.general.clipboardPrimary
     switch (action) {
-      case "open":
       case "paste":
         Util.execArgv(Clipboard.pasteArgv(entry, false))
         return { close: true }
@@ -397,6 +423,195 @@ Item {
     return Object.assign({}, fallback, { loading: true })
   }
 
+  // --------------------------------------------------------------- hotkeys
+
+  readonly property string hyprDir: (Quickshell.env("XDG_CONFIG_HOME") || (backend.paths.home + "/.config")) + "/hypr"
+  readonly property string hotkeysPath: backend.hyprDir + "/oma-cast.lua"
+  // Whether hyprland.lua loads oma-cast.lua; without it hotkeys do nothing.
+  property bool hotkeysLoaded: false
+  property bool hotkeysDirty: false
+
+  // The normalized hotkey, or throws: invalid, or already another command's.
+  // owner: "launcher" or a command id.
+  function checkHotkey(value, owner) {
+    var text = String(value || "").trim()
+    if (!text) return ""
+    var problem = Hotkeys.validate(text)
+    if (problem) throw new Error(problem)
+    var key = Hotkeys.normalize(text)
+    if (owner !== "launcher" && Hotkeys.normalize(backend.general.launcherHotkey) === key) throw new Error(Hotkeys.display(key) + " already opens oma-cast")
+    var commands = settingsStore.doc.commands
+    for (var id in commands) {
+      if (id !== owner && commands[id].hotkey && Hotkeys.normalize(commands[id].hotkey) === key)
+        throw new Error(Hotkeys.display(key) + " is already used by " + (commands[id].hotkeyTitle || id))
+    }
+    return key
+  }
+
+  // Every hotkey oma-cast binds: [{hotkey, id, title}], the launcher's first.
+  function hotkeyEntries() {
+    var out = []
+    var commands = settingsStore.loaded ? settingsStore.doc.commands : ({})
+    for (var id in commands) if (commands[id].hotkey) out.push({ hotkey: commands[id].hotkey, id: id, title: commands[id].hotkeyTitle || id })
+    out.sort(function(a, b) { return a.title.toLowerCase() < b.title.toLowerCase() ? -1 : 1 })
+    return out
+  }
+
+  function hotkeyStatus() {
+    var entries = backend.hotkeyEntries()
+    return {
+      path: backend.hotkeysPath,
+      loaded: backend.hotkeysLoaded,
+      launcher: backend.general.launcherHotkey,
+      commands: entries
+    }
+  }
+
+  // Omarchy bindings already on `hotkey` (from Search Keybindings), not
+  // counting oma-cast's own.
+  function hotkeyConflicts(hotkey) {
+    var ours = backend.hotkeyEntries().map(function(e) { return e.hotkey }).concat([backend.general.launcherHotkey])
+    return Hotkeys.conflicts(hotkey, keybindingsSource.rows, ours)
+  }
+
+  function scheduleHotkeys() {
+    backend.hotkeysDirty = true
+    hotkeysTimer.restart()
+  }
+
+  // Rewrites oma-cast.lua when it changed, then reloads Hyprland.
+  function writeHotkeys(force) {
+    var text = Hotkeys.luaFile(backend.general.launcherHotkey, backend.hotkeyEntries())
+    backend.hotkeysDirty = false
+    if (!force && hotkeysFile.loaded && hotkeysFile.text() === text) return false
+    hotkeysFile.setText(text)
+    reloadTimer.restart()
+    return true
+  }
+
+  Timer { id: hotkeysTimer; interval: 300; onTriggered: if (backend.hotkeysDirty) backend.writeHotkeys(false) }
+  // After the atomic write lands.
+  Timer { id: reloadTimer; interval: 250; onTriggered: Quickshell.execDetached(["hyprctl", "reload"]) }
+
+  function afterGeneralUpdate(patch) {
+    if (patch.launcherHotkey !== undefined) backend.scheduleHotkeys()
+    if (patch.rootKeybindings !== undefined) rebuildTimer.restart()
+    if (patch.fileFolders !== undefined || patch.fileHidden !== undefined || patch.fileExcludes !== undefined) fileSource.reset()
+  }
+
+  FileView {
+    id: hotkeysFile
+    property bool loaded: false
+    path: backend.hotkeysPath
+    atomicWrites: true
+    printErrors: false
+    onLoaded: hotkeysFile.loaded = true
+    onLoadFailed: hotkeysFile.loaded = false
+  }
+
+  FileView {
+    path: backend.hyprDir + "/hyprland.lua"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: backend.hotkeysLoaded = /^\s*require\(\s*["']hypr\.oma-cast["']\s*\)/m.test(text())
+    onLoadFailed: backend.hotkeysLoaded = false
+  }
+
+  // ------------------------------------------------------------------ data
+
+  // Applies what it can of a general-settings patch, skipping invalid keys.
+  function applyGeneralLoosely(patch) {
+    var current = backend.general
+    var good = ({}), skipped = 0
+    for (var key in patch) {
+      var v = patch[key]
+      var choices = Schema.generalChoices[key]
+      var ok = current[key] !== undefined && typeof v === typeof current[key] && Array.isArray(v) === Array.isArray(current[key])
+        && !(choices && choices.indexOf(v) < 0) && !Schema.checkGeneralValue(key, v)
+      if (key === "launcherHotkey" && ok && v && Hotkeys.validate(v)) ok = false
+      if (ok) good[key] = key === "launcherHotkey" ? Hotkeys.normalize(v) || "" : v
+      else skipped++
+    }
+    settingsStore.update(function(doc) { for (var k in good) doc.general[k] = good[k] })
+    backend.afterGeneralUpdate(good)
+    return skipped
+  }
+
+  // Everything you set up, in one JSON document (Settings → Data).
+  function backupDocument() {
+    return {
+      app: "oma-cast", backupVersion: 1, createdAt: new Date().toISOString(),
+      general: settingsStore.doc.general,
+      commands: settingsStore.doc.commands,
+      snippets: Snippets.exportList(snippetsStore.doc),
+      quicklinks: Quicklinks.exportList(quicklinksStore.doc),
+      emojiUsage: emojiStore.loaded ? emojiStore.doc.usage : ({})
+    }
+  }
+
+  // Settings and command settings are replaced; snippets and quicklinks are
+  // imported beside the current ones (duplicates skipped); emoji counts merge.
+  function restoreBackup(text) {
+    var doc
+    try { doc = JSON.parse(String(text || "")) } catch (e) { throw new Error("That is not valid JSON") }
+    if (!doc || doc.app !== "oma-cast" || doc.backupVersion !== 1) throw new Error("That is not an oma-cast backup")
+    var parts = []
+    var skipped = doc.general && typeof doc.general === "object" ? backend.applyGeneralLoosely(doc.general) : 0
+    if (doc.commands && typeof doc.commands === "object" && !Array.isArray(doc.commands)) {
+      var commands = ({})
+      for (var id in doc.commands) {
+        var c = doc.commands[id], clean = ({})
+        if (!c || typeof c !== "object") continue
+        if (typeof c.alias === "string" && c.alias && !/\s/.test(c.alias)) clean.alias = c.alias.toLowerCase()
+        if (c.enabled === false) clean.enabled = false
+        if (typeof c.favoriteOrder === "number") clean.favoriteOrder = c.favoriteOrder
+        if (typeof c.hotkey === "string" && !Hotkeys.validate(c.hotkey)) { clean.hotkey = Hotkeys.normalize(c.hotkey); clean.hotkeyTitle = String(c.hotkeyTitle || id) }
+        if (Object.keys(clean).length) commands[id] = clean
+      }
+      settingsStore.update(function(d) { d.commands = commands })
+      parts.push(Object.keys(commands).length + " command settings")
+    }
+    if (Array.isArray(doc.snippets) && doc.snippets.length) {
+      var sn = Snippets.importText(snippetsStore.doc, JSON.stringify(doc.snippets), { now: Date.now() }, backend.snippetDeps)
+      if (!sn.error && sn.added) backend.storeSnippets(sn.doc)
+      parts.push((sn.added || 0) + " snippets")
+    }
+    if (Array.isArray(doc.quicklinks) && doc.quicklinks.length) {
+      var ql = Quicklinks.importText(quicklinksStore.doc, JSON.stringify(doc.quicklinks), { apps: backend.installedApps(), now: Date.now() })
+      if (!ql.error && ql.added) backend.storeQuicklinks(ql.doc)
+      parts.push((ql.added || 0) + " quicklinks")
+    }
+    if (doc.emojiUsage && typeof doc.emojiUsage === "object") {
+      emojiStore.update(function(d) {
+        for (var k in doc.emojiUsage) {
+          var u = doc.emojiUsage[k]
+          if (!u || typeof u.count !== "number") continue
+          var mine = d.usage[k]
+          if (!mine || mine.count < u.count) d.usage[k] = { count: u.count, lastUsedAt: Number(u.lastUsedAt) || 0 }
+        }
+      })
+    }
+    backend.scheduleHotkeys()
+    rebuildTimer.restart()
+    return { ok: true, title: "Restored " + (parts.length ? parts.join(", ") : "settings") + (skipped ? " (" + skipped + " settings skipped)" : "") }
+  }
+
+  function restoreFrom(input) {
+    var path = String(input || "").trim()
+    if (path === "~" || path.indexOf("~/") === 0) path = backend.paths.home + path.slice(1)
+    if (path && path.charAt(0) !== "/") throw new Error("Type a full path, starting with / or ~")
+    if (path) return backend.restoreBackup(backend.readTextFile(path))
+    if (pasteProc.running) throw new Error("Still reading the clipboard")
+    backend.paste(false, function(text) {
+      var outcome
+      try { outcome = backend.restoreBackup(text) }
+      catch (e) { outcome = { ok: false, title: String(e.message || e) } }
+      backend.emit("data.restored", outcome)
+    })
+    return { pending: true, ok: true, title: "Reading the clipboard…" }
+  }
+
   // ------------------------------------------------------------- execution
 
   function summonPlugin(id, payload) {
@@ -496,7 +711,7 @@ Item {
         case "quicklink":
           return backend.openQuicklink(candidate.quicklinkId, (data && data.arguments) || {}, query)
         case "snippet":
-          return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, "paste")
+          return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, backend.general.snippetPrimary)
         case "fallback":
           Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(candidate, query)])
           return { close: true }
@@ -519,8 +734,9 @@ Item {
       case "edit-quicklink":
         var editing = Quicklinks.get(quicklinksStore.doc, candidate.quicklinkId)
         return { push: backend.quicklinkForm("Edit Quicklink", editing) }
+      case "paste-snippet":
       case "copy-snippet":
-        return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, "copy")
+        return backend.pasteSnippet(candidate.snippetId, (data && data.arguments) || {}, query, action === "copy-snippet" ? "copy" : "paste")
       case "edit-snippet":
         return backend.openSettings({ tab: "snippets", snippetId: candidate.snippetId })
       case "delete-snippet":
@@ -799,7 +1015,7 @@ Item {
     exportProc.kind = kind
     exportProc.command = ["sh", "-c", exportProc.script, "sh", kind]
     exportProc.payload = JSON.stringify(rows, null, 2) + "\n"
-    exportProc.count = rows.length
+    exportProc.count = Array.isArray(rows) ? rows.length : 0
     exportProc.running = true
     return { toast: { style: "success", title: "Exporting…" } }
   }
@@ -919,7 +1135,9 @@ Item {
           var problem = Schema.checkGeneralValue(key, patch[key])
           if (problem) throw new Error(problem)
         }
+        if (patch.launcherHotkey !== undefined) patch.launcherHotkey = backend.checkHotkey(patch.launcherHotkey, "launcher")
         settingsStore.update(function(doc) { for (var k in patch) doc.general[k] = patch[k] })
+        backend.afterGeneralUpdate(patch)
         var general = Schema.withGeneralDefaults(settingsStore.doc.general)
         backend.emit("settings.generalSettingsChanged", general)
         return general
@@ -931,6 +1149,7 @@ Item {
       updateCommandSettings: function(data) {
         var id = String(data && data.commandId || "")
         if (!backend.candidatesById[id]) throw new Error("Unknown command " + id)
+        var hotkey = data && data.hotkey !== undefined && data.hotkey !== null ? backend.checkHotkey(data.hotkey, id) : ""
         if (data.alias !== undefined && data.alias !== null) {
           var alias = String(data.alias).trim().toLowerCase()
           if (/\s/.test(alias)) throw new Error("An alias cannot contain spaces")
@@ -942,8 +1161,13 @@ Item {
         backend.updateCommand(id, function(s) {
           if (data.alias !== undefined) { if (data.alias) s.alias = String(data.alias).trim().toLowerCase(); else delete s.alias }
           if (data.enabled !== undefined) { if (data.enabled === false) s.enabled = false; else delete s.enabled }
+          if (data.hotkey !== undefined) {
+            if (hotkey) { s.hotkey = hotkey; s.hotkeyTitle = String((backend.candidatesById[id] || {}).title || id) }
+            else { delete s.hotkey; delete s.hotkeyTitle }
+          }
           return s
         })
+        if (data.hotkey !== undefined) backend.scheduleHotkeys()
         return settingsStore.doc.commands[id] || {}
       }
     })
@@ -970,7 +1194,7 @@ Item {
         else if (view && view.kind === "quicklinks") sections = RootSearch.quicklinkSections(backend.candidates, query, ctx, backend.deps)
         else if (view && view.kind === "snippets") sections = RootSearch.snippetSections(backend.candidates, query, ctx, backend.deps)
         else if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
-        else if (view && view.kind === "clipboard-history") sections = Clipboard.sections(clipboardSource.entries, query)
+        else if (view && view.kind === "clipboard-history") sections = Clipboard.sections(clipboardSource.entries, query, backend.general.clipboardRows)
         else if (view && view.kind === "script-menu") {
           var menu = backend.scriptMenuFor(view)
           if (menu.error && !menu.items.length) throw new Error(menu.error)
@@ -981,10 +1205,11 @@ Item {
           if (query.trim() && ctx.filter === "all") ctx.calculation = backend.calculate(query)
           // A few file rows under Results; asynchronous, so they join on a
           // later rebuild (fileSource bumps candidatesRevision).
-          if (ctx.filter === "all") {
+          if (ctx.filter === "all" && backend.general.rootFiles) {
             fileSource.request(query)
-            ctx.files = fileSource.rowsFor(query, FileSearch.ROOT_LIMIT)
+            ctx.files = fileSource.rowsFor(query, backend.general.fileRootLimit)
           }
+          ctx.onlyFavorites = !!(data && data.onlyFavorites)
           sections = RootSearch.rootSections(backend.candidates, query, ctx, backend.deps)
         }
         return sections.map(function(s) {
@@ -995,10 +1220,16 @@ Item {
         var rowId = String(data && data.id || "")
         var file = fileSource.lookup(rowId)
         if (file) return RootSearch.actionsFor(file)
-        if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
-        if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
-        if (rowId.indexOf("emoji:") === 0) return RootSearch.actionsFor({ kind: "emoji" })
-        if (rowId.indexOf("clipboard:") === 0) return RootSearch.actionsFor({ kind: "clipboard" })
+        var prefs = backend.primaryPrefs()
+        if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" }, prefs)
+        if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" }, prefs)
+        if (rowId.indexOf("emoji:") === 0) return RootSearch.actionsFor({ kind: "emoji" }, prefs)
+        if (rowId.indexOf("clipboard:") === 0) return RootSearch.actionsFor({ kind: "clipboard" }, prefs)
+        if (rowId.indexOf("fallback-quicklink:") === 0) {
+          var named = backend.quicklinkNames()[rowId.slice("fallback-quicklink:".length)]
+          if (!named) throw new Error("That quicklink no longer exists")
+          return RootSearch.actionsFor({ kind: "fallback", title: "Open " + named })
+        }
         if (rowId.indexOf("script:") === 0) return backend.scriptActions(rowId)
         var candidate = backend.decorated(rowId)
         if (!candidate && (rowId === "url:open" || rowId === "url:create"))
@@ -1008,7 +1239,7 @@ Item {
           if (!fallback) throw new Error("Unknown command " + (data && data.id))
           return RootSearch.actionsFor({ kind: "fallback", title: fallback.title })
         }
-        var actions = RootSearch.actionsFor(candidate)
+        var actions = RootSearch.actionsFor(candidate, prefs)
         if (candidate.kind === "keybinding") actions[0].title = backend.keybindingText("copy")
         return actions
       },
@@ -1023,7 +1254,7 @@ Item {
           var entry = backend.historyEntry(rowId)
           return entry ? RootSearch.aboutFor(RootSearch.historyCandidate(entry, nowMs), nowMs) : []
         }
-        if (rowId.indexOf("emoji:") === 0 || rowId.indexOf("clipboard:") === 0) return []
+        if (rowId.indexOf("emoji:") === 0 || rowId.indexOf("clipboard:") === 0 || rowId.indexOf("fallback-quicklink:") === 0) return []
         if (rowId.indexOf("script:") === 0 && !backend.candidatesById[rowId]) {
           var found = backend.scriptItem(rowId)
           return RootSearch.aboutFor(ScriptMenu.candidate(found.menuKey, found.item, "", "", "always"), nowMs)
@@ -1041,6 +1272,16 @@ Item {
         if (!(data && data.confirmed)) {
           var confirm = RootSearch.confirmationFor(String(data && data.id || ""), String(data && data.action || "open"))
           if (confirm) return { confirm: confirm }
+        }
+        // A quicklink used as a fallback: the query fills its first argument.
+        if (data && String(data.id).indexOf("fallback-quicklink:") === 0) {
+          var qid = String(data.id).slice("fallback-quicklink:".length)
+          var ql = Quicklinks.get(quicklinksStore.doc, qid)
+          if (!ql) throw new Error("That quicklink no longer exists")
+          var parsedLink = Quicklinks.parseLink(ql.link)
+          var values = ({})
+          if (!parsedLink.error && parsedLink.arguments.length) values[parsedLink.arguments[0].name] = String(data.query || "").trim()
+          return backend.openQuicklink(qid, values, "")
         }
         var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === (data && data.id) })[0]
         if (fallback) {
@@ -1139,11 +1380,34 @@ Item {
       }
     })
 
+    Rpc.register(backend.registry, "hotkeys", {
+      status: function() { return backend.hotkeyStatus() },
+      // {hotkey} -> titles of Omarchy bindings on the same keys.
+      conflicts: function(data) { return backend.hotkeyConflicts(String(data && data.hotkey || "")) },
+      // Rewrites oma-cast.lua now (`oma-cast setup hyprland` calls this).
+      write: function() { return backend.writeHotkeys(true) },
+      // {active}: Settings records a hotkey inside an empty submap, so combos
+      // Hyprland already binds reach it.
+      record: function(data) {
+        Quickshell.execDetached(["hyprctl", "dispatch", data && data.active ? "hl.dsp.submap(\"oma-cast-record\")" : "hl.dsp.submap(\"reset\")"])
+        return null
+      }
+    })
+
+    Rpc.register(backend.registry, "data", {
+      clearSearchHistory: function() { frecencyStore.update(function(doc) { doc.searchHistory = [] }); return null },
+      resetRankings: function() { frecencyStore.update(function(doc) { doc.items = ({}) }); return null },
+      clearEmojiRecents: function() { emojiStore.update(function(doc) { doc.usage = ({}) }); return null },
+      backup: function() { return backend.exportRows("backup", backend.backupDocument()) },
+      // {path?}: a backup file, or the clipboard when empty.
+      restore: function(data) { return backend.restoreFrom(data && data.path) }
+    })
+
     Rpc.register(backend.registry, "emoji", {
       // Grid rows for the emoji view (Emoji.grid).
       grid: function(data) {
         var usage = emojiStore.loaded ? emojiStore.doc.usage : ({})
-        return Emoji.grid(emojiSource.values, String(data && data.query || ""), usage, Number(data && data.columns) || 8)
+        return Emoji.grid(emojiSource.values, String(data && data.query || ""), usage, Number(data && data.columns) || 8, backend.general.emojiFrequentCount)
       }
     })
 
@@ -1301,6 +1565,7 @@ Item {
 
   FileSearchSource {
     id: fileSource
+    options: ({ folders: backend.general.fileFolders, hidden: backend.general.fileHidden, excludes: backend.general.fileExcludes })
     onRevisionChanged: backend.candidatesRevision++
     onMessage: function(level, text, metadata) { backend.log(level, "files", text, metadata) }
   }
@@ -1413,7 +1678,8 @@ Item {
       var where = exportProc.path.replace(backend.paths.home, "~")
       var noun = exportProc.kind === "snippets" ? "snippet" : "quicklink"
       backend.emit(exportProc.kind + ".exported", exitCode === 0
-        ? { ok: true, title: "Exported " + exportProc.count + " " + noun + (exportProc.count === 1 ? "" : "s") + " to " + where + " and the clipboard" }
+        ? { ok: true, title: exportProc.kind === "backup" ? "Saved a backup to " + where + " and the clipboard"
+            : "Exported " + exportProc.count + " " + noun + (exportProc.count === 1 ? "" : "s") + " to " + where + " and the clipboard" }
         : { ok: false, title: "Export failed: " + (exportProc.errors || "exit " + exitCode) })
       exportProc.path = ""
       exportProc.errors = ""

@@ -16,6 +16,8 @@ Item {
   property var byId: ({})             // current and previous rows, for actions on a row just replaced
   property bool loading: debounce.running || proc.running
   property int revision: 0
+  // fd options from Settings → Search (FileSearch.fdArgv): {folders, hidden, excludes}.
+  property var options: ({})
 
   signal message(string level, string text, var metadata)
 
@@ -38,6 +40,14 @@ Item {
 
   function lookup(id) { return source.byId[id] || null }
 
+  // Options changed: forget answers made with the old ones.
+  function reset() {
+    source.wanted = ""
+    source.answered = ""
+    source.results = []
+    source.revision++
+  }
+
   function publish(q, rows) {
     var next = ({})
     for (var i = 0; i < source.results.length; i++) next[source.results[i].id] = source.results[i]
@@ -51,7 +61,7 @@ Item {
   function start() {
     if (proc.running) { proc.running = false; return }   // onExited starts the newest query
     proc.query = source.wanted
-    proc.command = FileSearch.fdArgv(proc.query, source.home)
+    proc.command = FileSearch.fdArgv(proc.query, source.home, source.options)
     proc.running = true
   }
 

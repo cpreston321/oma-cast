@@ -153,14 +153,14 @@ function search(values, query, usage) {
   return rows.slice(0, MAX_RESULTS).map(function(r) { return r.entry })
 }
 
-function frequent(values, usage) {
+function frequent(values, usage, limit) {
   var out = []
   for (var i = 0; i < values.length; i++) {
     var u = usageOf(usage, values[i].emoji)
     if (u.count > 0) out.push({ entry: values[i], count: u.count, lastUsedAt: u.lastUsedAt, order: i })
   }
   out.sort(function(a, b) { return (b.count - a.count) || (b.lastUsedAt - a.lastUsedAt) || (a.order - b.order) })
-  return out.slice(0, MAX_FREQUENT).map(function(r) { return r.entry })
+  return out.slice(0, typeof limit === "number" ? Math.max(0, Math.min(64, limit)) : MAX_FREQUENT).map(function(r) { return r.entry })
 }
 
 // A group is everything from its first emoji up to the next group's. An
@@ -190,7 +190,8 @@ function groupLabels(values, groups) {
 // Grid rows for the view: {kind: "section", title} or {kind: "cells", cells:
 // [{emoji, caption}]}, at most `columns` cells each. A query is answered by one
 // ranked run: category order would fight the ranking.
-function grid(values, query, usage, columns) {
+// frequentLimit: how many Frequently Used (0 hides the row); default 16.
+function grid(values, query, usage, columns, frequentLimit) {
   var width = Math.max(1, Math.floor(columns) || 8)
   var rows = []
   function append(title, entries) {
@@ -203,7 +204,7 @@ function grid(values, query, usage, columns) {
     append("", search(values, query, usage))
     return rows
   }
-  append(FREQUENT_SECTION, frequent(values, usage))
+  append(FREQUENT_SECTION, frequent(values, usage, frequentLimit))
   // A frequently used emoji stays listed in its own category too, so browsing
   // a category never has holes in it.
   var labels = groupLabels(values, GROUPS)

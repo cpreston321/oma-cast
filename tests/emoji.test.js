@@ -79,3 +79,13 @@ test("Omarchy's dataset groups into every CLDR section plus Currency", { skip: !
   const currency = rows.slice(rows.findIndex((r) => r.title === "Currency") + 1).flatMap((r) => r.cells.map((c) => c.emoji))
   assert.equal(currency[0], "$")
 })
+
+test("the Frequently Used count is configurable, and 0 hides the row", () => {
+  const values = E.parse(SAMPLE)
+  let usage = {}
+  for (const e of ["😀", "😺", "🐱"]) usage = E.recordUsage(usage, e, 1)
+  const frequent = (limit) => { const rows = E.grid(values, "", usage, 10, limit); return rows[0].title === E.FREQUENT_SECTION ? rows[1].cells.length : 0 }
+  assert.equal(frequent(undefined), 3)
+  assert.equal(frequent(2), 2)
+  assert.equal(frequent(0), 0)
+})

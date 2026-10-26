@@ -37,12 +37,20 @@ function searchable(query) {
 // fd matches the last term (the one being typed) against basenames; the
 // other terms filter the path afterwards, so "work invoice" finds
 // ~/Work/…/invoice.pdf and "oma cast spec" finds ~/Projects/oma-cast/SPEC.md.
-function fdArgv(query, home) {
+// opts (fork, Settings → Search): {folders: [...] (default [home]; "~"
+// expands), hidden: bool, excludes: [...] (default EXCLUDES)}.
+function fdArgv(query, home, opts) {
+  var o = opts || {}
   var list = terms(query)
   var last = list.length ? list[list.length - 1] : ""
   var argv = ["fd", "--ignore-case", "--fixed-strings", "--print0", "--max-results", String(SCAN_LIMIT)]
-  for (var i = 0; i < EXCLUDES.length; i++) argv.push("--exclude", EXCLUDES[i])
-  return argv.concat(["--", last, home])
+  if (o.hidden) argv.push("--hidden")
+  var excludes = Array.isArray(o.excludes) ? o.excludes : EXCLUDES
+  for (var i = 0; i < excludes.length; i++) argv.push("--exclude", excludes[i])
+  var folders = (Array.isArray(o.folders) && o.folders.length ? o.folders : [home]).map(function(f) {
+    return f === "~" ? home : (f.indexOf("~/") === 0 ? home + f.slice(1) : f)
+  })
+  return argv.concat(["--", last]).concat(folders)
 }
 
 function extension(name) {

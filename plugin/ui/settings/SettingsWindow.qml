@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Commons as Commons
+import "../../core/Hotkeys.js" as Hotkeys
 
 // The Settings window (fork, SPEC §10.5): a normal Hyprland window with a
 // sidebar of pages. open({tab, snippetId?, quicklinkId?}) shows it on a page,
@@ -17,9 +18,9 @@ FloatingWindow {
 
   title: "oma-cast Settings"
   color: Commons.Color.background
-  implicitWidth: 960
-  implicitHeight: 640
-  minimumSize: Qt.size(760, 520)
+  implicitWidth: 1060
+  implicitHeight: 680
+  minimumSize: Qt.size(880, 540)
   visible: false
 
   readonly property var look: ({
@@ -31,12 +32,50 @@ FloatingWindow {
   })
 
   readonly property var tabs: [
-    { id: "general", title: "General", glyph: "" },
-    { id: "commands", title: "Commands", glyph: "" },
-    { id: "snippets", title: "Snippets", glyph: "" },
-    { id: "quicklinks", title: "Quicklinks", glyph: "" },
-    { id: "calculator", title: "Calculator", glyph: "" }
+    { id: "general", title: "General", glyph: "\uf013" },
+    { id: "search", title: "Search", glyph: "\uf002" },
+    { id: "commands", title: "Commands", glyph: "\uf120" },
+    { id: "snippets", title: "Snippets", glyph: "\uf121" },
+    { id: "quicklinks", title: "Quicklinks", glyph: "\uf0c1" },
+    { id: "paste", title: "Paste & Copy", glyph: "\uf0ea" },
+    { id: "calculator", title: "Calculator", glyph: "\uf1ec" },
+    { id: "data", title: "Data", glyph: "\uf1c0" }
   ]
+
+  // ---- hotkey recording (HotkeyField)
+
+  property var recordingField: null
+
+  function startRecording(field) {
+    win.recordingField = field
+    win.backend.callSync("hotkeys.record", { active: true })
+    recordTimer.restart()
+  }
+
+  function stopRecording() {
+    if (!win.recordingField) return
+    win.recordingField = null
+    recordTimer.stop()
+    win.backend.callSync("hotkeys.record", { active: false })
+  }
+
+  // Never leave Hyprland in the recording submap, where no bindings work.
+  Timer { id: recordTimer; interval: 10000; onTriggered: { win.stopRecording(); win.flash("Stopped recording", false) } }
+  onVisibleChanged: if (!win.visible) win.stopRecording()
+  Component.onDestruction: win.stopRecording()
+
+  // owner: "launcher" or a command id; hotkey "" removes it.
+  function assignHotkey(owner, hotkey) {
+    var conflicts = hotkey ? (win.backend.callSync("hotkeys.conflicts", { hotkey: hotkey }).data || []) : []
+    var r = owner === "launcher"
+      ? win.backend.callSync("settings.updateGeneralSettings", { launcherHotkey: hotkey })
+      : win.backend.callSync("settings.updateCommandSettings", { commandId: owner, hotkey: hotkey })
+    if (!r.ok) { win.flash(r.error, true); return }
+    var shown = Hotkeys.display(hotkey)
+    if (!win.backend.hotkeysLoaded) win.flash("Saved, but Hyprland doesn't load oma-cast's hotkeys yet: run oma-cast setup hyprland", true)
+    else if (conflicts.length) win.flash(shown + " saved. It replaces Omarchy's “" + conflicts.join("”, “") + "”", false)
+    else win.flash(hotkey ? shown + " saved" : "Hotkey removed", false)
+  }
 
   function open(target) {
     var t = target || {}
@@ -61,25 +100,30 @@ FloatingWindow {
     target: win.backend
     function onNotification(method, data) {
       if (!win.visible) return
-      if (method === "snippets.imported" || method === "snippets.exported" || method === "quicklinks.imported" || method === "quicklinks.exported")
+      if (method === "snippets.imported" || method === "snippets.exported" || method === "quicklinks.imported" || method === "quicklinks.exported"
+          || method === "backup.exported" || method === "data.restored")
         win.flash(data.title, !data.ok)
     }
   }
 
-  Shortcut { sequence: "Ctrl+W"; onActivated: win.close() }
-  Shortcut { sequence: "Escape"; onActivated: win.close() }
+  Shortcut { sequence: "Ctrl+W"; enabled: !win.recordingField; onActivated: win.close() }
+  Shortcut { sequence: "Escape"; enabled: !win.recordingField; onActivated: win.close() }
   Shortcut {
     sequence: "Ctrl+S"
+    enabled: !win.recordingField
     onActivated: {
       if (win.tab === "snippets") snippetsPage.save()
       else if (win.tab === "quicklinks") quicklinksPage.save()
     }
   }
-  Shortcut { sequence: "Ctrl+1"; onActivated: win.tab = "general" }
-  Shortcut { sequence: "Ctrl+2"; onActivated: win.tab = "commands" }
-  Shortcut { sequence: "Ctrl+3"; onActivated: win.tab = "snippets" }
-  Shortcut { sequence: "Ctrl+4"; onActivated: win.tab = "quicklinks" }
-  Shortcut { sequence: "Ctrl+5"; onActivated: win.tab = "calculator" }
+  Repeater {
+    model: win.tabs
+    Item {
+      required property var modelData
+      required property int index
+      Shortcut { sequence: "Ctrl+" + (index + 1); enabled: !win.recordingField; onActivated: win.tab = modelData.id }
+    }
+  }
 
   Rectangle {
     id: sidebar
@@ -197,10 +241,13 @@ FloatingWindow {
     anchors.bottomMargin: Style.space(8)
 
     GeneralPage { anchors.fill: parent; visible: win.tab === "general"; backend: win.backend; host: win; look: win.look }
+    SearchPage { anchors.fill: parent; visible: win.tab === "search"; backend: win.backend; host: win; look: win.look }
     CommandsPage { anchors.fill: parent; visible: win.tab === "commands"; backend: win.backend; host: win; look: win.look }
     SnippetsPage { id: snippetsPage; anchors.fill: parent; visible: win.tab === "snippets"; backend: win.backend; host: win; look: win.look }
     QuicklinksPage { id: quicklinksPage; anchors.fill: parent; visible: win.tab === "quicklinks"; backend: win.backend; host: win; look: win.look }
+    PastePage { anchors.fill: parent; visible: win.tab === "paste"; backend: win.backend; host: win; look: win.look }
     CalculatorPage { anchors.fill: parent; visible: win.tab === "calculator"; backend: win.backend; host: win; look: win.look }
+    DataPage { anchors.fill: parent; visible: win.tab === "data"; backend: win.backend; host: win; look: win.look }
   }
 
   Item {

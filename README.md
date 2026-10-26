@@ -128,12 +128,26 @@ Import and export use Raycast's JSON format, `[{name, text, keyword?}]`.
 ## Settings
 
 **oma-cast Settings** in root search, `Ctrl+,` in the launcher, or
-`oma-cast settings [tab]`. Tabs: General (window mode, text size, Esc,
-return-to-root delay, navigation keys, search sensitivity), Commands
-(every command's alias and on/off switch, including ones you disabled),
-Snippets, Quicklinks and Calculator (currency rates, clock format, rem
-size, work-day hours, history). `Ctrl+1`…`5` switch tabs, `Ctrl+S` saves,
-`Esc` closes.
+`oma-cast settings [tab]`. `Ctrl+1`…`8` switch tabs, `Ctrl+S` saves, `Esc`
+closes.
+
+| Tab | What's in it |
+|---|---|
+| General | Launcher hotkey, which monitor it opens on, window mode, favorites in compact mode, text size, size, Esc, return-to-root delay, navigation keys |
+| Search | Sensitivity, Suggestions count, keybindings and files in root search, folders/exclusions/hidden files for file search, and the "Use <query> with…" fallbacks (reorder them, remove them, add any quicklink) |
+| Commands | Every command's alias, hotkey and on/off switch |
+| Snippets, Quicklinks | Editors, import and export |
+| Paste & Copy | Whether ↵ pastes or copies for clipboard, emoji, snippets and calculator answers; list sizes |
+| Calculator | Currency rates, clock format, rem size, work-day hours, history |
+| Data | Clear search history, reset rankings, clear emoji recents, back up and restore everything, log level |
+
+**Hotkeys** go in `~/.config/hypr/oma-cast.lua`, which Settings rewrites and
+`hyprland.lua` loads (`oma-cast setup hyprland` adds the `require`). Click a
+hotkey field and press the keys: while it records, Hyprland is put in an
+empty submap so combos it already binds reach the field (10 s at most;
+Super+Ctrl+Alt+Shift+F12 also leaves it). A hotkey that Omarchy already uses
+replaces Omarchy's binding, and Settings says which one. Any command can have
+one: a hotkey on a snippet pastes it into the focused app.
 
 ### Bar button and Super+Space
 

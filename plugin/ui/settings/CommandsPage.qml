@@ -15,7 +15,7 @@ SettingsPage {
   property string show: "all"
 
   title: "Commands"
-  description: "Give anything an alias, or switch off what you never use. Typing an alias exactly puts its command first."
+  description: "Give anything an alias or a hotkey, or switch off what you never use. Typing an alias exactly puts its command first; a hotkey runs it from anywhere."
 
   readonly property var commands: {
     page.backend.storeRevision
@@ -30,12 +30,15 @@ SettingsPage {
     var list = page.backend.candidates
     for (var i = 0; i < list.length; i++) {
       var c = list[i]
+      // Keybinding rows describe Omarchy's own shortcuts; files come and go.
+      if (c.kind === "keybinding" || c.kind === "file" || c.kind === "folder") continue
       var s = settings[c.id] || {}
       var disabled = s.enabled === false
       if (page.show === "disabled" && !disabled) continue
       if (page.show === "aliased" && !s.alias) continue
+      if (page.show === "hotkeys" && !s.hotkey) continue
       if (q && (c.title + " " + c.subtitle + " " + (s.alias || "")).toLowerCase().indexOf(q) < 0) continue
-      out.push({ id: c.id, title: c.title, subtitle: c.subtitle || c.typeLabel || "", glyph: c.glyph || "", glyphFont: c.glyphFont || "", iconName: c.iconName || "", alias: s.alias || "", disabled: disabled })
+      out.push({ id: c.id, title: c.title, subtitle: c.subtitle || c.typeLabel || "", glyph: c.glyph || "", glyphFont: c.glyphFont || "", iconName: c.iconName || "", alias: s.alias || "", hotkey: s.hotkey || "", disabled: disabled })
     }
     out.sort(function(a, b) { return a.title.toLowerCase() < b.title.toLowerCase() ? -1 : (a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0) })
     return out
@@ -55,7 +58,7 @@ SettingsPage {
 
     TextField {
       width: parent.width - showGroup.width - parent.spacing - Style.space(12)
-      placeholderText: "Filter " + page.backend.candidates.length + " commands…"
+      placeholderText: "Filter commands…"
       font.family: page.look.fontFamily
       font.pixelSize: Style.font.body
       onTextChanged: page.filter = text
@@ -63,7 +66,7 @@ SettingsPage {
     ButtonGroup {
       id: showGroup
       anchors.verticalCenter: parent.verticalCenter
-      options: [{ value: "all", label: "All" }, { value: "aliased", label: "With alias" }, { value: "disabled", label: "Disabled" }]
+      options: [{ value: "all", label: "All" }, { value: "aliased", label: "Aliases" }, { value: "hotkeys", label: "Hotkeys" }, { value: "disabled", label: "Disabled" }]
       value: page.show
       onChanged: function(v) { page.show = v }
     }
@@ -146,10 +149,10 @@ SettingsPage {
 
       TextField {
         id: aliasField
-        anchors.right: toggle.left
+        anchors.right: hotkeyField.left
         anchors.rightMargin: Style.space(14)
         anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(130)
+        width: Style.space(110)
         placeholderText: "Add alias"
         text: entry.modelData.alias
         font.family: page.look.fontFamily
@@ -159,6 +162,18 @@ SettingsPage {
           if (!page.update({ commandId: entry.modelData.id, alias: text.trim() })) text = entry.modelData.alias
           else page.host.flash(text.trim() ? "Alias “" + text.trim().toLowerCase() + "” saved" : "Alias removed", false)
         }
+      }
+
+      HotkeyField {
+        id: hotkeyField
+        anchors.right: toggle.left
+        anchors.rightMargin: Style.space(14)
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(140)
+        host: page.host
+        look: page.look
+        value: entry.modelData.hotkey
+        onChanged: function(hotkey) { page.host.assignHotkey(entry.modelData.id, hotkey) }
       }
 
       ToggleSwitch {
@@ -182,7 +197,7 @@ SettingsPage {
       anchors.centerIn: parent
       visible: list.count === 0
       textFormat: Text.PlainText
-      text: page.show === "disabled" ? "Nothing is disabled" : "No commands match"
+      text: page.show === "disabled" ? "Nothing is disabled" : (page.show === "hotkeys" ? "No hotkeys yet" : "No commands match")
       color: page.look.muted
       font.family: page.look.fontFamily
       font.pixelSize: Style.font.body

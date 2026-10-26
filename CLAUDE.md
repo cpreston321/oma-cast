@@ -171,6 +171,15 @@ Works:
 - **Snippets** (`core/Snippets.js`, `db/snippets.json`, the `snippets` view): Phase 4 without the expansion engine (launcher only, as decided with the user). The placeholder lexer and date formatting are Quicklinks.js's, passed in as `deps.lexer` (core modules don't import each other). Snippet rules: `{cursor}` at most once, `{snippet}` nests one level (the nested one may not use `{snippet}`/`{argument}`), `{calculator}` uses the built-in engine, `{clipboard offset=N}` reads clipboard history, `{selection}` is refused, and an unknown `{word}` is literal. `services/TextPaster.qml` pipes the text to wl-copy on stdin (never argv), presses Shift+Insert, then Left × the characters after `{cursor}`.
 - **Settings window** (`ui/settings/`, a Quickshell `FloatingWindow` built from Omarchy's `qs.Ui` controls): General, Commands, Snippets, Quicklinks, Calculator. `settings.updateConfig` writes config.json, validating each key with `Schema.validConfigValue` and keeping keys it doesn't know; the write is asynchronous. Opened by `builtin:settings`, Ctrl+, the `settings` IPC function and `oma-cast settings [tab]`; any action can return `backend.openSettings({tab, snippetId|quicklinkId})`.
 
+**More settings (fork, 2026-10-26):**
+- New general settings live in `Schema.generalAdditions` (#11's additive defaults, filled in on read; lists validated by `generalLists`). `Backend.general` is the merged view.
+- **Hotkeys** (`core/Hotkeys.js`): Hyprland notation, `fromQt` for the recorder, `conflicts` against Search Keybindings rows, `luaFile` for `~/.config/hypr/oma-cast.lua`. Each command hotkey stores `hotkeyTitle`, so the file depends only on settings; it is rewritten (then `hyprctl reload`) only after a hotkey changes or on `hotkeys.write`, never at startup. Recording enters the `oma-cast-record` submap, which the file defines (`hl.define_submap` needs at least one bind). `oma-cast setup hyprland` asks the running plugin to write the file.
+- `windowPresentationMode`: focused monitor from `Hyprland.focusedMonitor` before showing; "mouse-screen" corrects it with `hyprctl cursorpos` (only with more than one screen).
+- Primary actions: `RootSearch.actionsFor(candidate, prefs)` orders each paste/copy pair; `"open"` (click, `oma-cast run`, hotkeys) maps to the preference in the backend.
+- Fallbacks: `general.fallbacks` (built-in ids or `quicklink:<id>`); a quicklink fallback row is `fallback-quicklink:<id>` and gets the query as its first argument.
+- Data: `data.backup` writes one JSON document (settings, commands, snippets, quicklinks, emoji usage) through the export process; `data.restore` replaces settings and imports the rest.
+- `tests/qml-lint.test.js` catches a function named `<property>Changed`, which stops a QML file loading (it took the plugin down once).
+
 Stubbed / not yet:
 - Snippet keyword expansion in other apps (SPEC §5.4) needs evdev/uinput access; not built.
 - No deep links (`oma-cast://`); Phase 2 or 9.

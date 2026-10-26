@@ -142,25 +142,28 @@ cmd_dev() {
 cmd_setup_hyprland() {
   [[ -f $hypr_dir/hyprland.lua ]] || die "no $hypr_dir/hyprland.lua; this setup targets Lua-configured Hyprland (hyprctl version: $(hyprctl version 2>/dev/null | head -1))"
 
-  local conflicts
-  conflicts=$(grep -rnE '"ALT \+ SPACE"|ALT, ?SPACE' "$hypr_dir" "${OMARCHY_PATH:-/usr/share/omarchy}/default/hypr" 2>/dev/null | grep -v "$hypr_dir/oma-cast.lua" | grep -vE '^\S+:[0-9]+:\s*(--|#)')
-  if [[ -n $conflicts ]]; then
-    echo "Alt+Space is already bound:" >&2
-    echo "$conflicts" >&2
-    die "unbind it first, or edit $hypr_dir/oma-cast.lua to use another key"
+  # Settings owns oma-cast.lua (the launcher hotkey and per-command ones), so
+  # the running plugin writes it. Without the plugin, a first-time file binds
+  # the default Alt+Space; an existing one is left alone.
+  if [[ $(omarchy-shell "$IPC_TARGET" ping 2>/dev/null) == "ok" ]]; then
+    ipc call hotkeys.write "{}" >/dev/null && echo "wrote $hypr_dir/oma-cast.lua from oma-cast's hotkey settings"
+  elif [[ ! -e $hypr_dir/oma-cast.lua ]]; then
+    local conflicts
+    conflicts=$(grep -rnE '"ALT \+ SPACE"|ALT, ?SPACE' "$hypr_dir" "${OMARCHY_PATH:-/usr/share/omarchy}/default/hypr" 2>/dev/null | grep -v "$hypr_dir/oma-cast.lua" | grep -vE '^\S+:[0-9]+:\s*(--|#)')
+    if [[ -n $conflicts ]]; then
+      echo "Alt+Space is already bound:" >&2
+      echo "$conflicts" >&2
+      die "unbind it first, or start oma-cast and choose a hotkey in Settings"
+    fi
+    printf '%s\n\n' 'o.bind("ALT + SPACE", "oma-cast", hl.dsp.global("oma-cast:toggle"))' >"$hypr_dir/oma-cast.lua"
+    echo "wrote $hypr_dir/oma-cast.lua"
   fi
-
-  cat >"$hypr_dir/oma-cast.lua" <<'LUA'
-o.bind("ALT + SPACE", "oma-cast launcher", hl.dsp.global("oma-cast:toggle"))
-
-LUA
-  echo "wrote $hypr_dir/oma-cast.lua"
 
   if ! grep -qE '^\s*require\("hypr\.oma-cast"\)' "$hypr_dir/hyprland.lua"; then
     printf '\nrequire("hypr.oma-cast")\n' >>"$hypr_dir/hyprland.lua"
     echo "added require(\"hypr.oma-cast\") to $hypr_dir/hyprland.lua"
   fi
-  hyprctl reload >/dev/null && echo "reloaded Hyprland; Alt+Space toggles oma-cast"
+  hyprctl reload >/dev/null && echo "reloaded Hyprland; set hotkeys in oma-cast Settings"
 }
 
 cmd_doctor() {

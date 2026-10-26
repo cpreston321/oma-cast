@@ -7,6 +7,8 @@ Item {
   id: page
 
   property string title: ""
+  // The sidebar tab it belongs to, for settings search.
+  property string tabId: ""
   property string description: ""
   property var look: null
   default property alias content: body.data
@@ -17,6 +19,8 @@ Item {
     anchors.right: parent.right
     anchors.top: parent.top
     spacing: Style.space(4)
+    visible: page.title.length > 0
+    height: visible ? implicitHeight : 0
 
     Text {
       textFormat: Text.PlainText
@@ -43,7 +47,7 @@ Item {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: heading.bottom
-    anchors.topMargin: Style.space(16)
+    anchors.topMargin: heading.visible ? Style.space(16) : 0
     anchors.bottom: parent.bottom
   }
 }

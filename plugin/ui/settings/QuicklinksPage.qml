@@ -11,6 +11,7 @@ SettingsPage {
   required property var backend
   required property var host
 
+  tabId: "quicklinks"
   title: "Quicklinks"
   description: "Links and searches you open by name. {argument} placeholders become pills in the launcher."
 

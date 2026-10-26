@@ -41,7 +41,7 @@ Setup
   dev                    Reload the plugin on every save under plugin/
   setup hyprland         Bind Alt+Space to the launcher in ~/.config/hypr/oma-cast.lua
   doctor                 Check that the pieces are in place
-  settings [tab]         Open Settings (general, search, commands, snippets, quicklinks, ai…)
+  settings [tab]         Open Settings (general, search, extensions, commands, snippets, quicklinks, data, or an extension: calculator, ai…)
 USAGE
 }
 

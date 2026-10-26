@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "CommandRows.js" as CommandRows
 
 // Every root-search command: its alias and whether it is enabled. The
 // launcher can disable a command but not bring it back; this page can.
@@ -14,6 +15,7 @@ SettingsPage {
   property string filter: ""
   property string show: "all"
 
+  tabId: "commands"
   title: "Commands"
   description: "Give anything an alias or a hotkey, or switch off what you never use. Typing an alias exactly puts its command first; a hotkey runs it from anywhere."
 
@@ -23,32 +25,7 @@ SettingsPage {
     return r && r.ok ? r.data : ({})
   }
 
-  readonly property var rows: {
-    var q = page.filter.trim().toLowerCase()
-    var settings = page.commands
-    var out = []
-    var list = page.backend.candidates
-    for (var i = 0; i < list.length; i++) {
-      var c = list[i]
-      // Keybinding rows describe Omarchy's own shortcuts; files come and go.
-      if (c.kind === "keybinding" || c.kind === "file" || c.kind === "folder") continue
-      var s = settings[c.id] || {}
-      var disabled = s.enabled === false
-      if (page.show === "disabled" && !disabled) continue
-      if (page.show === "aliased" && !s.alias) continue
-      if (page.show === "hotkeys" && !s.hotkey) continue
-      if (q && (c.title + " " + c.subtitle + " " + (s.alias || "")).toLowerCase().indexOf(q) < 0) continue
-      out.push({ id: c.id, title: c.title, subtitle: c.subtitle || c.typeLabel || "", glyph: c.glyph || "", glyphFont: c.glyphFont || "", iconName: c.iconName || "", alias: s.alias || "", hotkey: s.hotkey || "", disabled: disabled })
-    }
-    out.sort(function(a, b) { return a.title.toLowerCase() < b.title.toLowerCase() ? -1 : (a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0) })
-    return out
-  }
-
-  function update(patch) {
-    var r = page.backend.callSync("settings.updateCommandSettings", patch)
-    if (!r.ok) page.host.flash(r.error, true)
-    return r.ok
-  }
+  readonly property var rows: CommandRows.build(page.backend.candidates, page.commands, { show: page.show, query: page.filter })
 
   Row {
     id: toolbar
@@ -84,115 +61,13 @@ SettingsPage {
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-    delegate: Item {
-      id: entry
-      required property var modelData
+    delegate: CommandRow {
       required property int index
       width: list.width - Style.space(12)
-      height: Style.space(46)
-
-      Item {
-        id: icon
-        width: Style.space(22)
-        height: Style.space(22)
-        anchors.left: parent.left
-        anchors.leftMargin: Style.space(4)
-        anchors.verticalCenter: parent.verticalCenter
-
-        Image {
-          anchors.fill: parent
-          visible: entry.modelData.iconName.length > 0 && entry.modelData.glyph.length === 0
-          source: visible ? Quickshell.iconPath(entry.modelData.iconName, "application-x-executable") : ""
-          sourceSize.width: width * 2
-          sourceSize.height: height * 2
-          fillMode: Image.PreserveAspectFit
-          asynchronous: true
-        }
-        Text {
-          anchors.centerIn: parent
-          visible: entry.modelData.glyph.length > 0
-          textFormat: Text.PlainText
-          text: entry.modelData.glyph
-          color: page.look.foreground
-          font.family: entry.modelData.glyphFont || page.look.fontFamily
-          font.pixelSize: Style.space(15)
-        }
-      }
-
-      Column {
-        anchors.left: icon.right
-        anchors.leftMargin: Style.space(12)
-        anchors.right: aliasField.left
-        anchors.rightMargin: Style.space(12)
-        anchors.verticalCenter: parent.verticalCenter
-        opacity: entry.modelData.disabled ? 0.45 : 1
-
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: entry.modelData.title
-          color: page.look.foreground
-          elide: Text.ElideRight
-          font.family: page.look.fontFamily
-          font.pixelSize: Style.font.body
-        }
-        Text {
-          width: parent.width
-          visible: text.length > 0
-          textFormat: Text.PlainText
-          text: entry.modelData.subtitle
-          color: page.look.muted
-          elide: Text.ElideRight
-          font.family: page.look.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-      }
-
-      TextField {
-        id: aliasField
-        anchors.right: hotkeyField.left
-        anchors.rightMargin: Style.space(14)
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(110)
-        placeholderText: "Add alias"
-        text: entry.modelData.alias
-        font.family: page.look.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        onEditingFinished: {
-          if (text.trim().toLowerCase() === entry.modelData.alias) return
-          if (!page.update({ commandId: entry.modelData.id, alias: text.trim() })) text = entry.modelData.alias
-          else page.host.flash(text.trim() ? "Alias “" + text.trim().toLowerCase() + "” saved" : "Alias removed", false)
-        }
-      }
-
-      HotkeyField {
-        id: hotkeyField
-        anchors.right: toggle.left
-        anchors.rightMargin: Style.space(14)
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(140)
-        host: page.host
-        look: page.look
-        value: entry.modelData.hotkey
-        onChanged: function(hotkey) { page.host.assignHotkey(entry.modelData.id, hotkey) }
-      }
-
-      ToggleSwitch {
-        id: toggle
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        checked: !entry.modelData.disabled
-        onToggled: page.update({ commandId: entry.modelData.id, enabled: entry.modelData.disabled })
-      }
-
-      Rectangle {
-        visible: entry.index < list.count - 1
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        height: 1
-        color: Util.alpha(page.look.foreground, 0.06)
-      }
+      backend: page.backend
+      host: page.host
+      look: page.look
+      divider: index < list.count - 1
     }
 
     Text {

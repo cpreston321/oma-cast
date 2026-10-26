@@ -12,6 +12,7 @@ SettingsPage {
   required property var backend
   required property var host
 
+  tabId: "snippets"
   title: "Snippets"
   description: "Saved text to paste from the launcher, or AI Commands sent to your agent. Placeholders fill in when you use them."
 

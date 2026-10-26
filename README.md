@@ -86,7 +86,7 @@ More ways to ask (fork). Each one still opens a terminal session with the agent;
 nothing is answered inside oma-cast:
 
 * **`?` then a space and your question** lists one **Ask** row per installed
-  agent, your default first. Settings → AI changes the prefix or turns it off.
+  agent, your default first. Settings → Extensions → AI changes the prefix or turns it off.
 * **Ask Agent** takes the question in a pill, so it can have its own hotkey or
   alias. **Ask About Selection** asks about the text you had selected in the app
   you came from.
@@ -99,7 +99,7 @@ nothing is answered inside oma-cast:
   your agent.
 
 An agent counts as installed when Omarchy has installed it (its
-install-on-first-use wrapper alone doesn't count). Settings → AI also picks the
+install-on-first-use wrapper alone doesn't count). Settings → Extensions → AI also picks the
 default agent (saved where `omarchy-default-agent` saves it, without starting a
 session), shows each agent's plan usage from Omarchy's usage records, and sets
 the folder sessions start in.
@@ -152,7 +152,7 @@ Import and export use Raycast's JSON format, `[{name, text, keyword?}]`.
 Type a calculation in root search. An amount and a unit on their own convert
 to the obvious counterpart: `16rem` → 256 px, `5 kg` → 11.02 lb, `100 f` →
 37.78 °C, `5'10"` → 177.8 cm. Money works the same way: `€50` converts to your currency
-and `$100` to your second one (Settings → Calculator; both follow your locale
+and `$100` to your second one (Settings → Extensions → Calculator; both follow your locale
 by default). About 170 currencies, Bitcoin and gold included: `100 usd to aed`,
 `50 dirhams to usd`, `CA$100`, `1 btc`, `100 dollars in pounds`,
 `1 oz gold`, `10 g of silver in eur`. Ask for several at once with `and` or commas:
@@ -160,26 +160,33 @@ by default). About 170 currencies, Bitcoin and gold included: `100 usd to aed`,
 "pesos", "dinars" or "dollars" mean your currency when it's one of them. The defaults follow your measurement system (US, UK or Metric, from your
 locale): in the US `180 cm` → 5 ft 10.87 in and `70 kg` → 154.32 lb; in the UK
 `70 kg` → 11.02 st and a pint is 568 mL. Pick what each unit converts to, or
-switch one off, in Settings → Calculator. Name a target with `to`/`in`: `180 cm in feet
+switch one off, in Settings → Extensions → Calculator. Name a target with `to`/`in`: `180 cm in feet
 and inches`, `1 gb to mb`, `16 oz to ml`, `1in to px`, `0 c in k`. Currencies,
 dates, time zones, bases and percentages work too. ↵ copies the answer.
 
 ## Settings
 
 **oma-cast Settings** in root search, `Ctrl+,` in the launcher, or
-`oma-cast settings [tab]`. `Ctrl+1`…`9` switch tabs, `Ctrl+S` saves, `Esc`
-closes.
+`oma-cast settings [tab]`. `Ctrl+1`…`7` switch tabs, `Ctrl+F` searches every
+setting, `Ctrl+S` saves, `Esc` clears the search, then closes.
+
+Each page groups its settings into cards. **Search settings…** at the top of the
+sidebar finds any setting by name, description or what it's about ("currency",
+"vim", "log"); ↵ or a click opens its page, scrolls to it and highlights it.
+Rarely needed rows (focus behaviour, rem size, work-day hours, log level) stay
+hidden until **Show advanced** is on; searching for one turns it on.
 
 | Tab | What's in it |
 |---|---|
-| General | Launcher hotkey, which monitor it opens on, window mode, favorites in compact mode, text size, size, Esc, return-to-root delay, navigation keys |
-| Search | Sensitivity, Suggestions count, keybindings and files in root search, folders/exclusions/hidden files for file search, and the "Use <query> with…" fallbacks (reorder them, remove them, add any quicklink) |
-| Commands | Every command's alias, hotkey and on/off switch |
+| General | Window (mode, compact favorites, text size, size, monitor), Keyboard (launcher hotkey, Esc, navigation keys, return to root) |
+| Search | Ranking (sensitivity, Suggestions), rows that join root search (keybindings, files), and the "Use <query> with…" fallbacks |
+| Extensions | One page per feature, as in Raycast: its commands' aliases, hotkeys and on/off switches, then its settings. Clipboard, Emoji, Calculator, AI, Files, Snippets, Quicklinks, Window Layouts, Web Search, Omarchy |
+| All Commands | Every command's alias, hotkey and on/off switch in one filterable list |
 | Snippets, Quicklinks | Editors, import and export; a snippet can be an AI Command |
-| Paste & Copy | Whether ↵ pastes or copies for clipboard, emoji, snippets and calculator answers; list sizes |
-| Calculator | Currency rates, clock format, rem size, work-day hours, history |
-| AI | Default agent, plan usage, the `?` ask prefix, the folder sessions start in |
 | Data | Clear search history, reset rankings, clear emoji recents, back up and restore everything, log level |
+
+`oma-cast settings calculator` (or `ai`, `clipboard`, `emoji`, `files`…) opens
+that extension.
 
 **Hotkeys** go in `~/.config/hypr/oma-cast.lua`, which Settings rewrites and
 `hyprland.lua` loads (`oma-cast setup hyprland` adds the `require`). Click a

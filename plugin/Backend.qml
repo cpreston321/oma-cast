@@ -407,6 +407,11 @@ Item {
     return candidate.kind === "omarchy-link" ? candidate.target : candidate.menuId
   }
 
+  function launchApp(candidate) {
+    if (backend.appLibrary) backend.appLibrary.launch(candidate.appId, candidate.title)
+    else Util.execArgv(["uwsm-app", "--", "gtk-launch", candidate.appId + ".desktop"])
+  }
+
   function performAction(data) {
     var id = String(data && data.id || "")
     var action = String(data && data.action || "open")
@@ -418,8 +423,7 @@ Item {
       switch (candidate.kind) {
         case "app":
           backend.recordVisit(id, query)
-          if (backend.appLibrary) backend.appLibrary.launch(candidate.appId, candidate.title)
-          else Util.execArgv(["uwsm-app", "--", "gtk-launch", candidate.appId + ".desktop"])
+          appFocuser.open(candidate)
           return { close: true }
         case "omarchy-action":
           if (candidate.disabled) return { toast: { style: "failure", title: candidate.title + " is already set up" } }
@@ -461,6 +465,10 @@ Item {
     }
 
     switch (action) {
+      case "open-new":
+        backend.recordVisit(id, query)
+        backend.launchApp(candidate)
+        return { close: true }
       case "open-in-omarchy-menu":
         backend.summonPlugin("omarchy.menu", JSON.stringify({ menu: backend.omarchyRouteFor(candidate) }))
         return { close: true }
@@ -1152,6 +1160,11 @@ Item {
       backend.refreshScriptMenus()
     }
     if (method === "window.visibilityChanged" && data && !data.visible) agentLauncher.cancel()
+  }
+
+  AppFocuser {
+    id: appFocuser
+    onLaunchRequested: function(candidate) { backend.launchApp(candidate) }
   }
 
   AgentLauncher {

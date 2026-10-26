@@ -191,6 +191,7 @@ SettingsPage {
           }
         }
         Rectangle {
+          visible: fallbackRow.index < page.fallbacks.length - 1
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.bottom: parent.bottom

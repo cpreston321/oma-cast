@@ -9,6 +9,19 @@ Item {
   property string description: ""
   property var look: null
   default property alias control: slot.data
+  readonly property bool isSettingRow: true
+  // The divider only separates rows: none after the last row of a group
+  // (the next shown item is a heading, a list or nothing).
+  readonly property bool lastInGroup: {
+    var kids = row.parent ? row.parent.children : []
+    var after = false
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i] === row) { after = true; continue }
+      if (!after || !kids[i].visible || kids[i].height <= 0) continue
+      return !kids[i].isSettingRow
+    }
+    return true
+  }
 
   width: parent ? parent.width : 0
   height: Math.max(texts.implicitHeight, slot.childrenRect.height) + Style.space(24)
@@ -51,6 +64,7 @@ Item {
   }
 
   Rectangle {
+    visible: !row.lastInGroup
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.bottom: parent.bottom

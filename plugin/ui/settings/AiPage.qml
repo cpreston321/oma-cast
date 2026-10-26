@@ -116,6 +116,7 @@ SettingsPage {
       Item {
         id: usageRow
         required property var modelData
+        required property int index
         width: parent ? parent.width : 0
         height: Style.space(36)
         Text {
@@ -137,6 +138,7 @@ SettingsPage {
           font.pixelSize: Style.font.bodySmall
         }
         Rectangle {
+          visible: usageRow.index < page.withUsage.length - 1
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.bottom: parent.bottom

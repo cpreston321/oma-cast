@@ -87,6 +87,7 @@ SettingsPage {
     delegate: Item {
       id: entry
       required property var modelData
+      required property int index
       width: list.width - Style.space(12)
       height: Style.space(46)
 
@@ -185,6 +186,7 @@ SettingsPage {
       }
 
       Rectangle {
+        visible: entry.index < list.count - 1
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom

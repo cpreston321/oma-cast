@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "typecraft.oma-cast-button",
+  "name": "Oma Cast Button",
+  "version": "0.0.1",
+  "author": "typecraft",
+  "description": "An Omarchy logo in the bar that opens oma-cast",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Oma Cast",
+    "description": "Opens the oma-cast launcher",
+    "category": "Compositor",
+    "defaultSection": "left",
+    "allowMultiple": false
+  }
+}

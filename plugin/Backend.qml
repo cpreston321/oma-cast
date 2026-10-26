@@ -12,6 +12,9 @@ import "core/OmarchyMenu.js" as OmarchyMenu
 import "core/RootSearch.js" as RootSearch
 import "core/Agent.js" as Agent
 import "core/Calculator.js" as Calculator
+import "core/Emoji.js" as Emoji
+import "core/Clipboard.js" as Clipboard
+import "core/ScriptMenu.js" as ScriptMenu
 import "services"
 
 Item {
@@ -35,7 +38,13 @@ Item {
   property var candidates: []
   property var candidatesById: ({})
   property int candidatesRevision: 0
-  readonly property bool loading: menuSource.loading || agentLauncher.checking
+  readonly property bool loading: menuSource.loading || agentLauncher.checking || scriptRunner.running
+  // plugin/ on disk, for the scripts bundled with it (ScriptMenu.SOURCES).
+  readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
+  // Bumped when a pushed view's data changes (clipboard, emoji usage, script
+  // menus), and when a detail pane's content arrives.
+  property int viewRevision: 0
+  property int detailRevision: 0
   // Bumped when exchange rates or zone offsets arrive, so an open
   // calculator row re-evaluates.
   readonly property int calculatorRevision: (calculatorData.rates ? 1 : 0) + calculatorData.ratesFetchedAt + calculatorData.zonesAt
@@ -76,6 +85,7 @@ Item {
     for (var i = 0; i < apps.length; i++) if (apps[i] && apps[i].id) next.push(RootSearch.appCandidate(apps[i]))
     next = next.concat(RootSearch.menuCandidates(menuSource.tree, menuSource.guards, menuSource.providerItems, backend.deps))
     for (var b = 0; b < RootSearch.BUILTINS.length; b++) next.push(RootSearch.builtinCandidate(RootSearch.BUILTINS[b]))
+    next = next.concat(backend.scriptCandidates())
     var byId = ({})
     for (var j = 0; j < next.length; j++) byId[next[j].id] = next[j]
     backend.candidates = next
@@ -177,6 +187,179 @@ Item {
     var list = calculatorStore.loaded ? calculatorStore.doc.history : []
     for (var i = 0; i < list.length; i++) if (list[i].id === key) return list[i]
     return null
+  }
+
+  // ------------------------------------------------- emoji and clipboard
+
+  function emojiAction(action, emoji) {
+    if (action === "open" || action === "paste") {
+      emojiStore.update(function(doc) { doc.usage = Emoji.recordUsage(doc.usage, emoji, Date.now()) })
+      // Omarchy's own insert: copies, waits for our window to unmap, types.
+      Util.execArgv(["omarchy-menu-emoji-insert", emoji])
+      return { close: true }
+    }
+    if (action === "copy") {
+      emojiStore.update(function(doc) { doc.usage = Emoji.recordUsage(doc.usage, emoji, Date.now()) })
+      Util.execArgv(["wl-copy", "--", emoji])
+      return { close: true, hud: "Copied " + emoji }
+    }
+    throw new Error("Unknown action " + action)
+  }
+
+  function clipboardEntry(id) {
+    var entry = clipboardSource.entry(Number(String(id).slice("clipboard:".length)))
+    if (!entry) throw new Error("That entry is no longer in the clipboard history")
+    return entry
+  }
+
+  function clipboardAction(action, entry) {
+    switch (action) {
+      case "open":
+      case "paste":
+        Util.execArgv(Clipboard.pasteArgv(entry, false))
+        return { close: true }
+      case "copy":
+        Util.execArgv(Clipboard.pasteArgv(entry, true))
+        return { close: true, hud: "Copied to Clipboard" }
+      case "open-entry":
+        Util.execArgv(Clipboard.openArgv(entry))
+        return { close: true }
+    }
+    throw new Error("Unknown action " + action)
+  }
+
+  // ---------------------------------------------------------- script menus
+
+  // menuKey -> {command, title, items, error, loading}. A source's own menu is
+  // keyed by the source id; submenus by ScriptMenu.menuKey(command).
+  property var scriptMenus: ({})
+  // JSON(command) -> {doc, error, loading} for detail panes.
+  property var scriptDocuments: ({})
+
+  function scriptMenuFor(view) {
+    var key = String(view && view.menuKey || "")
+    if (backend.scriptMenus[key]) return backend.scriptMenus[key]
+    var source = ScriptMenu.sourceById(key)
+    var command = source ? ScriptMenu.sourceCommand(source, backend.pluginDir) : (view && view.command)
+    if (!command) throw new Error("Unknown menu " + key)
+    var menu = { command: command, title: String(view.title || (source && source.title) || ""), items: [], error: "", loading: false, loaded: false }
+    backend.scriptMenus[key] = menu
+    backend.loadScriptMenu(key)
+    return menu
+  }
+
+  function loadScriptMenu(key) {
+    var menu = backend.scriptMenus[key]
+    if (!menu || menu.loading) return
+    menu.loading = true
+    scriptRunner.run(menu.command, function(ok, out, err) {
+      menu.loading = false
+      menu.loaded = true
+      if (ok) {
+        var parsed = ScriptMenu.parse(out)
+        menu.items = parsed.items
+        menu.error = parsed.error
+      } else {
+        menu.error = ScriptMenu.summary(err) || "The menu script failed"
+      }
+      if (menu.error) backend.log("warning", "script-menu", key + ": " + menu.error)
+      if (ScriptMenu.sourceById(key)) rebuildTimer.restart()
+      backend.viewRevision++
+    })
+  }
+
+  // Everything a script may have changed is reloaded after it runs.
+  function refreshScriptMenus() {
+    backend.scriptDocuments = ({})
+    for (var key in backend.scriptMenus) backend.loadScriptMenu(key)
+    for (var i = 0; i < ScriptMenu.SOURCES.length; i++) {
+      var source = ScriptMenu.SOURCES[i]
+      if (source.globalSearch) backend.scriptMenuFor({ menuKey: source.id })
+    }
+    backend.detailRevision++
+  }
+
+  // Top-level items of globalSearch sources, found by root search while typing.
+  function scriptCandidates() {
+    var out = []
+    for (var i = 0; i < ScriptMenu.SOURCES.length; i++) {
+      var source = ScriptMenu.SOURCES[i]
+      var menu = backend.scriptMenus[source.id]
+      if (!source.globalSearch || !menu) continue
+      for (var j = 0; j < menu.items.length; j++)
+        out.push(ScriptMenu.candidate(source.id, menu.items[j], source.title, source.typeLabel, "searching"))
+    }
+    return out
+  }
+
+  function scriptItem(rowId) {
+    var ref = ScriptMenu.splitRowId(rowId)
+    var menu = ref && backend.scriptMenus[ref.menuKey]
+    var item = menu ? menu.items.filter(function(i) { return i.id === ref.itemId })[0] : null
+    if (!item) throw new Error("That item is no longer available")
+    return { menuKey: ref.menuKey, item: item }
+  }
+
+  function runScriptPlan(plan, label) {
+    if (plan.error) throw new Error(plan.error)
+    if (plan.mode === "dispatch") {
+      Util.execArgv(plan.run)
+      return { close: true }
+    }
+    scriptRunner.run(plan.run, function(ok, out, err) {
+      var message = ok ? (ScriptMenu.summary(out) || label) : (ScriptMenu.summary(err) || ScriptMenu.summary(out) || label + " failed")
+      backend.emit("script.finished", { ok: ok, close: ok && plan.mode === "close-on-success", message: message })
+      backend.refreshScriptMenus()
+    })
+    return { pending: true }
+  }
+
+  function scriptAction(data) {
+    var found = backend.scriptItem(data.id)
+    var action = String(data.action || "open")
+    var target = ScriptMenu.targetFor(found.item, action)
+    // Favourites, aliases and Disable on root-search rows.
+    if (!target) return backend.performAction(data)
+    var plan = ScriptMenu.plan(found.menuKey, found.item, target, action, !!data.confirmed)
+    if (plan.confirm) return { confirm: plan.confirm }
+    if (plan.push) return { push: plan.push }
+    if (plan.detail) return {}
+    if (backend.candidatesById[data.id]) backend.recordVisit(data.id, String(data.query || "").trim())
+    return backend.runScriptPlan(plan, target.label)
+  }
+
+  function scriptActions(rowId) {
+    var found = backend.scriptItem(rowId)
+    var list = ScriptMenu.actionsFor(found.item)
+    var candidate = backend.decorated(rowId)
+    if (candidate) {
+      var extras = RootSearch.actionsFor(candidate).filter(function(a) { return a.section === "favorites" || a.section === "configure" || a.id === "disable" })
+      list = list.concat(extras)
+    }
+    return list
+  }
+
+  function scriptDetail(rowId) {
+    var item = backend.scriptItem(rowId).item
+    var fallback = { title: item.label, subtitle: item.description, status: "", blocks: [], metadata: [] }
+    if (!item.document) return fallback
+    var key = JSON.stringify(item.document.command)
+    var cached = backend.scriptDocuments[key]
+    if (cached) return cached.doc ? cached.doc : Object.assign({}, fallback, { loading: cached.loading, status: cached.error })
+    var entry = { doc: null, error: "", loading: true }
+    backend.scriptDocuments[key] = entry
+    // Called from the detail pane's binding: starting the process there would
+    // bind the pane to the runner's busy count it changes (a binding loop).
+    var command = item.document.command
+    Qt.callLater(function() {
+      scriptRunner.run(command, function(ok, out, err) {
+        entry.loading = false
+        entry.doc = ok ? ScriptMenu.parseDocument(out) : null
+        if (!entry.doc) entry.error = ScriptMenu.summary(err) || "No preview"
+        backend.detailRevision++
+      })
+    })
+    return Object.assign({}, fallback, { loading: true })
   }
 
   // ------------------------------------------------------------- execution
@@ -389,6 +572,12 @@ Item {
         var sections
         if (view && view.kind === "menu") sections = RootSearch.submenuSections(backend.candidates, view.menuId, query, ctx, backend.deps)
         else if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
+        else if (view && view.kind === "clipboard-history") sections = Clipboard.sections(clipboardSource.entries, query)
+        else if (view && view.kind === "script-menu") {
+          var menu = backend.scriptMenuFor(view)
+          if (menu.error && !menu.items.length) throw new Error(menu.error)
+          sections = ScriptMenu.sections(view.menuKey, menu.items, query, ctx, { Ranker: Ranker, decorate: function(c) { return RootSearch.decorate(c, ctx, backend.deps) } })
+        }
         else {
           ctx.filter = String(data && data.filter || "all")
           if (query.trim() && ctx.filter === "all") ctx.calculation = backend.calculate(query)
@@ -402,6 +591,9 @@ Item {
         var rowId = String(data && data.id || "")
         if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
+        if (rowId.indexOf("emoji:") === 0) return RootSearch.actionsFor({ kind: "emoji" })
+        if (rowId.indexOf("clipboard:") === 0) return RootSearch.actionsFor({ kind: "clipboard" })
+        if (rowId.indexOf("script:") === 0) return backend.scriptActions(rowId)
         var candidate = backend.decorated(rowId)
         if (!candidate) {
           var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === data.id })[0]
@@ -420,6 +612,11 @@ Item {
         if (rowId.indexOf("calculator-history:") === 0) {
           var entry = backend.historyEntry(rowId)
           return entry ? RootSearch.aboutFor(RootSearch.historyCandidate(entry, nowMs), nowMs) : []
+        }
+        if (rowId.indexOf("emoji:") === 0 || rowId.indexOf("clipboard:") === 0) return []
+        if (rowId.indexOf("script:") === 0 && !backend.candidatesById[rowId]) {
+          var found = backend.scriptItem(rowId)
+          return RootSearch.aboutFor(ScriptMenu.candidate(found.menuKey, found.item, "", "", "always"), nowMs)
         }
         var candidate = backend.decorated(rowId)
         if (!candidate) {
@@ -455,9 +652,37 @@ Item {
           if (!entry) throw new Error("No such history entry")
           return backend.calculatorAction(String(data.action || "open"), entry, entry.id)
         }
+        if (data && String(data.id).indexOf("emoji:") === 0) return backend.emojiAction(String(data.action || "open"), String(data.id).slice("emoji:".length))
+        if (data && String(data.id).indexOf("clipboard:") === 0) return backend.clipboardAction(String(data.action || "open"), backend.clipboardEntry(data.id))
+        if (data && String(data.id).indexOf("script:") === 0) return backend.scriptAction(data)
         return backend.performAction(data)
       },
-      getSearchHistory: function() { return frecencyStore.loaded ? frecencyStore.doc.searchHistory : [] }
+      getSearchHistory: function() { return frecencyStore.loaded ? frecencyStore.doc.searchHistory : [] },
+      // The detail pane beside clipboard and script-menu lists; null for none.
+      getDetail: function(data) {
+        var rowId = String(data && data.id || "")
+        if (rowId.indexOf("clipboard:") === 0) return Clipboard.detail(backend.clipboardEntry(rowId))
+        if (rowId.indexOf("script:") === 0) return backend.scriptDetail(rowId)
+        return null
+      }
+    })
+
+    Rpc.register(backend.registry, "emoji", {
+      // Grid rows for the emoji view (Emoji.grid).
+      grid: function(data) {
+        var usage = emojiStore.loaded ? emojiStore.doc.usage : ({})
+        return Emoji.grid(emojiSource.values, String(data && data.query || ""), usage, Number(data && data.columns) || 8)
+      }
+    })
+
+    Rpc.register(backend.registry, "scriptMenu", {
+      // ↵ in a script-input view: run the item or action with {input} filled.
+      submitInput: function(data) {
+        var found = backend.scriptItem(String(data && data.rowId || ""))
+        var target = ScriptMenu.targetFor(found.item, String(data.actionId || "open"))
+        return backend.runScriptPlan(ScriptMenu.planInput(target, String(data.input || "")), target ? target.label : "")
+      },
+      refresh: function() { backend.refreshScriptMenus(); return null }
     })
 
     // Names from Raycast's calculator namespace (ref 02 §2).
@@ -512,11 +737,12 @@ Item {
     function onValuesChanged() { rebuildTimer.restart() }
   }
 
-  Component.onDestruction: { settingsStore.flush(); frecencyStore.flush(); calculatorStore.flush() }
+  Component.onDestruction: { settingsStore.flush(); frecencyStore.flush(); calculatorStore.flush(); emojiStore.flush() }
   onNotification: function(method, data) {
     if (method === "window.visibilityChanged" && data && data.visible) {
       menuSource.refresh()
       calculatorData.refresh()
+      backend.refreshScriptMenus()
     }
     if (method === "window.visibilityChanged" && data && !data.visible) agentLauncher.cancel()
   }
@@ -567,6 +793,29 @@ Item {
     onMessage: function(level, text, metadata) { backend.log(level, "store", text, metadata) }
   }
 
+  JsonStore {
+    id: emojiStore
+    ready: backend.directoriesReady
+    path: backend.paths.db + "/" + Schema.documents.emoji.file
+    migrations: Schema.documents.emoji.migrations
+    onMessage: function(level, text, metadata) { backend.log(level, "store", text, metadata) }
+  }
+
+  EmojiSource {
+    id: emojiSource
+    onValuesChanged: backend.viewRevision++
+    onMessage: function(level, text, metadata) { backend.log(level, "emoji", text, metadata) }
+  }
+
+  ClipboardSource {
+    id: clipboardSource
+    onRevisionChanged: backend.viewRevision++
+  }
+
+  ScriptRunner {
+    id: scriptRunner
+  }
+
   CalculatorData {
     id: calculatorData
     cacheDir: backend.directoriesReady ? backend.paths.cache : ""
@@ -579,6 +828,7 @@ Item {
   Connections { target: settingsStore; function onChanged() { backend.storeRevision++ } }
   Connections { target: frecencyStore; function onChanged() { backend.storeRevision++ } }
   Connections { target: calculatorStore; function onChanged() { backend.storeRevision++ } }
+  Connections { target: emojiStore; function onChanged() { backend.storeRevision++ } }
 
   FileView {
     path: backend.directoriesReady ? backend.paths.configFile : ""

@@ -73,27 +73,28 @@ test("failure, crash and timeout never prepare a terminal launch", () => {
   assert.deepEqual(h.events, [{ message: "Agent launch check timed out. Try again." }])
 })
 
-test("showing refreshes calculator data and hiding cancels an agent hand-off", () => {
+test("showing refreshes calculator data and script menus, and hiding cancels an agent hand-off", () => {
   const text = fs.readFileSync(path.join(__dirname, "../plugin/Backend.qml"), "utf8")
   const events = []
   const context = vm.createContext({
     method: "window.visibilityChanged", data: { visible: true },
     menuSource: { refresh: () => events.push("menu") },
     calculatorData: { refresh: () => events.push("calculator") },
-    agentLauncher: { cancel: () => events.push("cancel") }
+    agentLauncher: { cancel: () => events.push("cancel") },
+    backend: { refreshScriptMenus: () => events.push("scripts") }
   })
   const notify = body(text, "onNotification: function(method, data)", 2)
   vm.runInContext(notify, context)
-  assert.deepEqual(events, ["menu", "calculator"])
+  assert.deepEqual(events, ["menu", "calculator", "scripts"])
   context.data = { visible: false }
   vm.runInContext(notify, context)
-  assert.deepEqual(events, ["menu", "calculator", "cancel"])
+  assert.deepEqual(events, ["menu", "calculator", "scripts", "cancel"])
   context.data = null
   vm.runInContext(notify, context)
   context.method = "calculator.historyStateChanged"
   context.data = { visible: true }
   vm.runInContext(notify, context)
-  assert.equal(events.length, 3)
+  assert.equal(events.length, 4)
 })
 
 test("entry point dismisses and clears the launcher before starting the terminal", () => {
@@ -126,7 +127,9 @@ test("agent shortcut is limited to root search and preserves normal Enter action
     saveAlias: () => events.push("save-alias"),
     argFocus: -1, argDefs: [],
     isActionPanelKey: () => false,
-    direction: () => 0
+    direction: () => 0,
+    get textEntry() { return this.view.kind === "alias" || this.view.kind === "script-input" },
+    emojiView: false
   }
   const context = vm.createContext({ Qt, window, event: null })
   function press(modifiers) {

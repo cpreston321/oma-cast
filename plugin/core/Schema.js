@@ -46,6 +46,18 @@ var calculatorMigrations = [
   }
 ]
 
+// Emoji usage for "Frequently Used" (Emoji.recordUsage), keyed "$<emoji>".
+var emojiMigrations = [
+  {
+    version: 1,
+    name: "emoji-usage",
+    up: function(doc) {
+      doc.usage = {}            // {"$😀": {count, lastUsedAt}}
+      return doc
+    }
+  }
+]
+
 var SEARCH_HISTORY_LIMIT = 20
 
 function pushSearchHistory(history, query) {
@@ -60,7 +72,8 @@ function pushSearchHistory(history, query) {
 var documents = {
   settings: { file: "settings.json", migrations: settingsMigrations },
   frecency: { file: "frecency.json", migrations: frecencyMigrations },
-  calculator: { file: "calculator.json", migrations: calculatorMigrations }
+  calculator: { file: "calculator.json", migrations: calculatorMigrations },
+  emoji: { file: "emoji.json", migrations: emojiMigrations }
 }
 
 var configDefaults = {
@@ -111,6 +124,7 @@ if (typeof module !== "undefined") {
     settingsMigrations: settingsMigrations,
     frecencyMigrations: frecencyMigrations,
     calculatorMigrations: calculatorMigrations,
+    emojiMigrations: emojiMigrations,
     pushSearchHistory: pushSearchHistory,
     SEARCH_HISTORY_LIMIT: SEARCH_HISTORY_LIMIT,
     documents: documents,

@@ -77,10 +77,35 @@ PanelWindow {
   readonly property string actionPanelKeys: window.vim ? "Alt K" : "Ctrl K"
 
   readonly property bool atRoot: window.stack.length === 1
+  // A view where the query is the value being edited (the alias editor, or a
+  // script menu's input prompt) rather than a search.
+  readonly property bool textEntry: window.view.kind === "alias" || window.view.kind === "script-input"
+  readonly property bool emojiView: window.view.kind === "emoji"
+  // Clipboard History and script menus with previews show the selected row
+  // beside the list.
+  property bool rowsHaveDetail: false
+  readonly property bool detailVisible: !window.textEntry && (window.view.kind === "clipboard-history" || (window.view.kind === "script-menu" && window.rowsHaveDetail))
+  readonly property var detail: {
+    window.backend.detailRevision
+    if (!window.detailVisible || !window.selectedRow) return null
+    var r = window.backend.callSync("rootSearch.getDetail", { id: window.selectedRow.itemId })
+    return r.ok ? r.data : null
+  }
+
+  // Emoji grid: rows from Emoji.grid, and the selected cell.
+  property var emojiRows: []
+  property int emojiRow: -1
+  property int emojiCol: 0
+  readonly property int emojiColumns: Math.max(6, Math.floor((window.cardWidth - window.px(32)) / window.px(62)))
+  onEmojiColumnsChanged: if (window.emojiView) window.rebuild(false)
   readonly property bool compact: window.general.windowMode === "compact" && window.atRoot && !window.query
   readonly property string placeholder: window.view.kind === "alias" ? "Type an alias, then press ↵"
     : window.view.kind === "menu" ? "Search " + window.view.title + "…"
     : window.view.kind === "calculator-history" ? "Search calculations…"
+    : window.view.kind === "emoji" ? "Search emoji…"
+    : window.view.kind === "clipboard-history" ? "Search clipboard history…"
+    : window.view.kind === "script-menu" ? "Search " + window.view.title + "…"
+    : window.view.kind === "script-input" ? window.view.title + "…"
     : "Search for apps and commands…"
 
   readonly property int cardWidth: Math.min(px(750), width - Style.gapsOut * 2)
@@ -138,7 +163,7 @@ PanelWindow {
     var saved = window.stack.slice()
     saved[saved.length - 1] = Object.assign({}, window.view, { query: window.query, selectedIndex: window.selectedIndex })
     window.stack = saved.concat([next])
-    window.query = next.kind === "alias" ? (next.value || "") : ""
+    window.query = next.kind === "alias" || next.kind === "script-input" ? (next.value || "") : ""
     window.rebuild(true)
   }
 
@@ -157,7 +182,10 @@ PanelWindow {
     pointerGate.reset()
     var keepId = !resetSelection && window.selectedRow ? window.selectedRow.itemId : ""
     rows.clear()
-    if (window.view.kind === "alias") { window.select(-1); return }
+    window.rowsHaveDetail = false
+    window.emojiRows = []
+    if (window.textEntry) { window.select(-1); return }
+    if (window.emojiView) { window.rebuildEmoji(keepId); return }
     var result = window.backend.callSync("rootSearch.search", { query: window.query, view: window.view, filter: window.atRoot ? window.rootFilter : "all" })
     if (!result.ok) {
       window.showToast("failure", result.error)
@@ -171,6 +199,7 @@ PanelWindow {
       for (var r = 0; r < section.rows.length; r++) {
         var c = section.rows[r]
         if (c.id === keepId) keepIndex = rows.count
+        if (c.hasDocument || c.kind === "clipboard") window.rowsHaveDetail = true
         rows.append(window.rowData(c, c.kind === "calculator" ? "calculator" : "item"))
       }
     }
@@ -259,6 +288,89 @@ PanelWindow {
   }
 
 
+  // ---------------------------------------------------------- emoji grid
+
+  function rebuildEmoji(keepId) {
+    var r = window.backend.callSync("emoji.grid", { query: window.query, columns: window.emojiColumns })
+    if (!r.ok) window.showToast("failure", r.error)
+    window.emojiRows = r.ok ? r.data : []
+    var keep = keepId.indexOf("emoji:") === 0 ? keepId.slice(6) : ""
+    for (var i = 0; keep && i < window.emojiRows.length; i++) {
+      var cells = window.emojiRows[i].cells || []
+      for (var j = 0; j < cells.length; j++) if (cells[j].emoji === keep) { window.selectEmoji(i, j); return }
+    }
+    window.selectEmoji(window.nextEmojiRow(-1, 1), 0)
+  }
+
+  function nextEmojiRow(from, direction) {
+    for (var i = from + direction; i >= 0 && i < window.emojiRows.length; i += direction)
+      if (window.emojiRows[i].kind === "cells") return i
+    return -1
+  }
+
+  function selectEmoji(row, col) {
+    window.argDefs = []
+    if (row < 0 || row >= window.emojiRows.length || window.emojiRows[row].kind !== "cells") {
+      window.emojiRow = -1
+      window.selectedIndex = -1
+      window.selectedRow = null
+      return
+    }
+    var cells = window.emojiRows[row].cells
+    var c = Math.max(0, Math.min(cells.length - 1, col))
+    window.emojiRow = row
+    window.emojiCol = c
+    window.selectedIndex = row
+    window.selectedRow = { itemId: "emoji:" + cells[c].emoji, title: cells[c].caption }
+    if (row === window.nextEmojiRow(-1, 1)) emojiList.positionViewAtBeginning()
+    else emojiList.positionViewAtIndex(row, ListView.Contain)
+  }
+
+  // Left/right wrap across rows; up/down keep the column where they can.
+  function moveEmoji(rowDelta, colDelta) {
+    pointerGate.reset()
+    if (window.emojiRow < 0) { window.selectEmoji(window.nextEmojiRow(-1, 1), 0); return }
+    var row = window.emojiRow
+    if (colDelta) {
+      var col = window.emojiCol + colDelta
+      if (col >= 0 && col < window.emojiRows[row].cells.length) { window.selectEmoji(row, col); return }
+      var next = window.nextEmojiRow(row, colDelta)
+      if (next >= 0) window.selectEmoji(next, colDelta > 0 ? 0 : window.emojiRows[next].cells.length - 1)
+      return
+    }
+    var step = rowDelta > 0 ? 1 : -1
+    for (var n = 0; n < Math.abs(rowDelta); n++) {
+      var r = window.nextEmojiRow(row, step)
+      if (r < 0) break
+      row = r
+    }
+    window.selectEmoji(row, window.emojiCol)
+  }
+
+  function jumpEmojiSection(direction) {
+    var i = window.emojiRow
+    for (i += direction; i >= 0 && i < window.emojiRows.length; i += direction)
+      if (window.emojiRows[i].kind === "section") break
+    if (direction < 0) {
+      for (i -= 1; i >= 0; i--) if (window.emojiRows[i].kind === "section") break
+    }
+    var first = window.nextEmojiRow(Math.max(-1, i), 1)
+    if (first >= 0) window.selectEmoji(first, 0)
+  }
+
+  function handleEmojiKey(event, ctrl, alt) {
+    var key = event.key
+    if (!ctrl && !alt && key === Qt.Key_Left) { window.moveEmoji(0, -1); return true }
+    if (!ctrl && !alt && key === Qt.Key_Right) { window.moveEmoji(0, 1); return true }
+    if (ctrl && !alt && key === Qt.Key_Up) { window.jumpEmojiSection(-1); return true }
+    if (ctrl && !alt && key === Qt.Key_Down) { window.jumpEmojiSection(1); return true }
+    if (key === Qt.Key_PageUp) { window.moveEmoji(-5, 0); return true }
+    if (key === Qt.Key_PageDown) { window.moveEmoji(5, 0); return true }
+    var dir = window.direction(event, ctrl, alt, false)
+    if (dir) { window.moveEmoji(dir, 0); return true }
+    return false
+  }
+
   function actionsForSelected() {
     if (!window.selectedRow) return []
     var r = window.backend.callSync("rootSearch.getActions", { id: window.selectedRow.itemId })
@@ -280,7 +392,10 @@ PanelWindow {
   function request(payload) {
     var r = window.backend.callSync("rootSearch.performAction", payload)
     if (!r.ok) { window.showToast("failure", r.error); return }
-    var outcome = r.data || {}
+    window.handleOutcome(r.data || {}, payload)
+  }
+
+  function handleOutcome(outcome, payload) {
     if (outcome.confirm) { window.alert = { spec: outcome.confirm, payload: payload }; return }
     if (outcome.push) { window.push(outcome.push); return }
     if (outcome.close) {
@@ -405,6 +520,15 @@ PanelWindow {
   }
 
 
+  // ↵ in a script menu's input prompt runs the command with the text, then
+  // returns to the menu.
+  function submitInput() {
+    var r = window.backend.callSync("scriptMenu.submitInput", { rowId: window.view.rowId, actionId: window.view.actionId, input: window.query })
+    if (!r.ok) { window.showToast("failure", r.error); return }
+    window.pop()
+    window.handleOutcome(r.data || {}, null)
+  }
+
   // A failure toast always offers its message to copy (Ctrl+T).
   function showToast(style, title, actions) {
     var list = (actions || []).slice()
@@ -428,6 +552,7 @@ PanelWindow {
 
   function setQuery(next) {
     if (window.query === next) return
+    if (window.view.kind === "script-input" && next.length > (window.view.maxLength || 256)) return
     window.query = next
     window.historyIndex = -1
     window.rebuild(true)
@@ -487,7 +612,7 @@ PanelWindow {
       window.popToRoot()
       return
     }
-    if (window.query && window.view.kind !== "alias") window.setQuery("")
+    if (window.query && !window.textEntry) window.setQuery("")
     else if (!window.atRoot) window.pop()
     else window.dismissRequested()
   }
@@ -559,10 +684,11 @@ PanelWindow {
       return window.handlePopupKey(event, actionPanel, ctrl, alt)
     }
 
-    if (window.view.kind === "alias") {
-      if (enter) { window.saveAlias(); return true }
-      if (key === Qt.Key_Space) return true
+    if (window.textEntry) {
+      if (enter) { if (window.view.kind === "alias") window.saveAlias(); else window.submitInput(); return true }
+      if (key === Qt.Key_Space && window.view.kind === "alias") return true
     } else {
+      if (window.emojiView && window.handleEmojiKey(event, ctrl, alt)) return true
       if (window.atRoot && enter && ctrl && alt && !shift) { window.askAgent(); return true }
       if (ctrl && shift && key === Qt.Key_K) { window.toggleAbout(); return true }
       if (window.isActionPanelKey(ctrl, alt, shift, key)) { window.toggleActionPanel(); return true }
@@ -614,8 +740,17 @@ PanelWindow {
   Connections {
     target: window.backend
     function onCandidatesRevisionChanged() { if (window.shown && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
+    function onViewRevisionChanged() { if (window.shown && !window.atRoot && !window.textEntry && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
     function onNotification(method, data) {
       if (method === "agent.launchFailed" && window.shown) window.showToast("failure", data.message)
+      // A script menu command finished (Backend.runScriptPlan).
+      if (method === "script.finished") {
+        if (data.close) {
+          window.hud(data.message)
+          if (window.shown) window.dismissRequested()
+        } else if (window.shown) window.showToast(data.ok ? "success" : "failure", data.message)
+        else if (!data.ok) window.hud(data.message)
+      }
     }
     // Exchange rates or zone offsets arrived: re-evaluate a calculation on screen.
     function onCalculatorRevisionChanged() { if (window.shown && !window.actionPanelOpen && window.query) window.rebuild(false) }
@@ -722,7 +857,7 @@ PanelWindow {
 
       Row {
         id: pills
-        visible: window.argDefs.length > 0 && window.view.kind !== "alias"
+        visible: window.argDefs.length > 0 && !window.textEntry
         x: queryText.x + (window.query ? queryText.width : 0) + window.px(10)
         anchors.verticalCenter: parent.verticalCenter
         spacing: window.px(6)
@@ -859,10 +994,13 @@ PanelWindow {
 
       ListView {
         id: list
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: window.detailVisible ? Math.round(parent.width * 0.5) : parent.width
         anchors.topMargin: window.px(4)
         anchors.bottomMargin: window.px(4)
-        visible: window.view.kind !== "alias"
+        visible: !window.textEntry && !window.emojiView
         clip: true
         model: rows
         boundsBehavior: Flickable.StopAtBounds
@@ -877,24 +1015,111 @@ PanelWindow {
         }
       }
 
+      DetailPane {
+        visible: window.detailVisible
+        anchors.left: list.right
+        anchors.leftMargin: window.px(8)
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.topMargin: window.px(4)
+        anchors.bottomMargin: window.px(4)
+        detail: window.detail
+        look: window.look
+        zoom: window.zoom
+      }
+
+      ListView {
+        id: emojiList
+        anchors.fill: parent
+        anchors.topMargin: window.px(4)
+        anchors.bottomMargin: window.px(4)
+        visible: window.emojiView
+        clip: true
+        model: window.emojiView ? window.emojiRows : []
+        boundsBehavior: Flickable.StopAtBounds
+        readonly property real cellSize: Math.floor(width / window.emojiColumns)
+
+        delegate: Item {
+          id: gridRow
+          required property var modelData
+          required property int index
+          readonly property bool isSection: gridRow.modelData.kind === "section"
+          width: emojiList.width
+          height: gridRow.isSection ? window.px(30) : emojiList.cellSize
+
+          Text {
+            visible: gridRow.isSection
+            textFormat: Text.PlainText
+            anchors.left: parent.left
+            anchors.leftMargin: window.px(12)
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: window.px(6)
+            text: gridRow.modelData.title || ""
+            color: window.look.foreground
+            opacity: 0.5
+            font.family: window.look.fontFamily
+            font.pixelSize: Math.round(Style.font.caption * window.zoom)
+            font.weight: Font.DemiBold
+          }
+
+          Row {
+            visible: !gridRow.isSection
+
+            Repeater {
+              model: gridRow.isSection ? [] : gridRow.modelData.cells
+
+              Rectangle {
+                id: cell
+                required property var modelData
+                required property int index
+                width: emojiList.cellSize
+                height: emojiList.cellSize
+                radius: Math.max(Style.cornerRadius, window.px(8))
+                color: window.emojiRow === gridRow.index && window.emojiCol === cell.index ? window.look.selectedBackground : "transparent"
+
+                Text {
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: cell.modelData.emoji
+                  color: window.look.foreground
+                  font.pixelSize: Math.round(emojiList.cellSize * 0.5)
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onPositionChanged: function(mouse) { if (!window.actionPanelOpen && pointerGate.moved(cell, mouse)) window.selectEmoji(gridRow.index, cell.index) }
+                  onClicked: { window.selectEmoji(gridRow.index, cell.index); window.perform("paste") }
+                }
+              }
+            }
+          }
+        }
+      }
+
       Column {
         anchors.centerIn: parent
         spacing: window.px(8)
-        visible: window.view.kind === "alias" || rows.count === 0
+        visible: window.textEntry || (window.emojiView ? window.emojiRows.length === 0 : rows.count === 0)
 
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.view.kind === "alias" ? "" : ""
+          text: window.textEntry ? "" : ""
           color: window.look.accent
-          font.family: window.view.kind === "alias" ? window.look.fontFamily : "omarchy"
+          font.family: window.textEntry ? window.look.fontFamily : "omarchy"
           font.pixelSize: window.px(28)
         }
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.view.kind === "alias" ? window.view.title
+          text: window.textEntry ? window.view.title
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
+            : window.view.kind === "clipboard-history" && !window.query ? "Clipboard Is Empty"
+            : window.view.kind === "script-menu" && window.backend.loading ? "Loading…"
+            : window.emojiView && window.query ? "No Emoji Found"
             : (window.backend.ready ? "No results" : "Loading…")
           color: window.look.foreground
           font.family: window.look.fontFamily
@@ -904,7 +1129,9 @@ PanelWindow {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
           text: window.view.kind === "alias" ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
-            : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer." : ""
+            : window.view.kind === "script-input" ? "Press ↵ to continue, Esc to cancel."
+            : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer."
+            : window.view.kind === "clipboard-history" && !window.query ? "Copy something and it shows up here." : ""
           visible: text.length > 0
           color: window.look.foreground
           opacity: 0.55
@@ -951,7 +1178,7 @@ PanelWindow {
         Text {
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
-          text: window.toast ? window.toast.title : window.view.title
+          text: window.toast ? window.toast.title : (window.emojiView && window.selectedRow ? window.selectedRow.title : window.view.title)
           color: window.look.foreground
           opacity: window.toast ? 0.9 : 0.6
           elide: Text.ElideRight
@@ -979,6 +1206,7 @@ PanelWindow {
           window.selectedRow
           window.backend.storeRevision
           if (window.view.kind === "alias") return { title: "Save Alias", shortcut: "↵" }
+          if (window.view.kind === "script-input") return { title: "Continue", shortcut: "↵" }
           var list = window.actionsForSelected()
           return list.length ? list[0] : null
         }
@@ -1000,14 +1228,14 @@ PanelWindow {
           zoom: window.zoom
         }
         Rectangle {
-          visible: window.view.kind !== "alias"
+          visible: !window.textEntry
           anchors.verticalCenter: parent.verticalCenter
           width: 1
           height: window.px(14)
           color: Util.alpha(window.look.foreground, 0.2)
         }
         Text {
-          visible: window.view.kind !== "alias"
+          visible: !window.textEntry
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: "Actions"
@@ -1017,7 +1245,7 @@ PanelWindow {
           font.pixelSize: Math.round(Style.font.bodySmall * window.zoom)
         }
         KeyHint {
-          visible: window.view.kind !== "alias"
+          visible: !window.textEntry
           anchors.verticalCenter: parent.verticalCenter
           keys: window.actionPanelKeys
           color: window.look.foreground

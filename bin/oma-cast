@@ -10,6 +10,8 @@ repo=$(cd "$(dirname "$self")/.." && pwd)
 plugin_src="$repo/plugin"
 plugins_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins"
 plugin_link="$plugins_dir/$PLUGIN_ID"
+BUTTON_ID="typecraft.oma-cast-button"
+button_dir="$plugins_dir/$BUTTON_ID"
 
 installed_links() {
   local link
@@ -33,7 +35,8 @@ Launcher
 
 Setup
   install                Link the plugin into omarchy-shell, enable it, and link this CLI into ~/.local/bin
-  uninstall              Disable and unlink the plugin
+  uninstall              Disable and unlink the plugin (and the bar button)
+  install-button         Put an Omarchy logo that opens oma-cast at the left of the bar
   reload                 Make the shell reload the plugin after editing it
   dev                    Reload the plugin on every save under plugin/
   setup hyprland         Bind Alt+Space to the launcher in ~/.config/hypr/oma-cast.lua
@@ -81,8 +84,31 @@ cmd_install() {
   die "plugin did not answer; check the shell log with: qs log -n -p \"\$OMARCHY_PATH/shell\""
 }
 
+# Qt refuses a bar widget reached through a symlinked plugin folder, so the
+# button is a separate plugin copied in as plain files (bar-button/).
+cmd_install_button() {
+  need_shell
+  [[ -f $repo/bar-button/manifest.json ]] || die "bar-button source missing at $repo/bar-button"
+  [[ ! -L $button_dir ]] || die "$button_dir is a symlink; remove it first"
+  mkdir -p "$button_dir"
+  cp "$repo/bar-button/manifest.json" "$repo/bar-button/BarWidget.qml" "$button_dir/"
+  echo "copied $button_dir"
+  omarchy-shell -q shell rescanPlugins
+  local out i
+  for i in $(seq 1 50); do
+    out=$(omarchy plugin enable "$BUTTON_ID" left --index 0 2>&1) && break
+    [[ $out == *"not ready"* || $out == *"could not find"* || $out == *"not known"* ]] || break
+    sleep 0.1
+  done
+  echo "$out"
+}
+
 cmd_uninstall() {
   need_shell
+  if [[ -d $button_dir && ! -L $button_dir ]]; then
+    omarchy plugin disable "$BUTTON_ID" 2>/dev/null || true
+    rm -r "$button_dir" && echo "removed $button_dir"
+  fi
   omarchy plugin disable "$PLUGIN_ID" 2>/dev/null || true
   local link
   while IFS= read -r link; do
@@ -166,6 +192,7 @@ case "${1:-}" in
   ping) need_shell; ipc ping ;;
   install) cmd_install ;;
   uninstall) cmd_uninstall ;;
+  install-button) cmd_install_button ;;
   reload) cmd_reload ;;
   dev) cmd_dev ;;
   setup)

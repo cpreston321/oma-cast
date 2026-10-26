@@ -40,6 +40,34 @@ var BUILTINS = [
     keywords: ["calculator", "calc", "math", "history", "conversions"],
     run: { push: { kind: "calculator-history", title: "Calculator History" } },
     rootSearch: { when: "always" }
+  },
+  // Ported from omalaunch (fork).
+  {
+    id: "builtin:emoji",
+    title: "Search Emoji",
+    subtitle: "Emoji",
+    glyph: "\uf118",                     // nf-fa-smile_o
+    keywords: ["emoji", "emojis", "smiley", "symbols", "currency", "picker"],
+    run: { push: { kind: "emoji", title: "Search Emoji" } },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:clipboard-history",
+    title: "Clipboard History",
+    subtitle: "Clipboard",
+    glyph: "\uf0ea",                     // nf-fa-paste
+    keywords: ["clipboard", "clip", "paste", "copy", "history"],
+    run: { push: { kind: "clipboard-history", title: "Clipboard History" } },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:layouts",
+    title: "Window Layouts",
+    subtitle: "Layouts",
+    glyph: "\u{f148c}",
+    keywords: ["layout", "layouts", "windows", "arrange", "workspace", "restore", "save"],
+    run: { push: { kind: "script-menu", menuKey: "layouts", title: "Window Layouts" } },
+    rootSearch: { when: "always" }
   }
 ]
 
@@ -285,6 +313,19 @@ function submenuSections(candidates, menuId, query, ctx, deps) {
 }
 
 function actionsFor(candidate) {
+  if (candidate.kind === "emoji") {
+    return [
+      { id: "paste", title: "Paste Emoji", shortcut: "↵", section: "primary", icon: "" },
+      { id: "copy", title: "Copy Emoji", shortcut: "Ctrl ↵", section: "primary", icon: "" }
+    ]
+  }
+  if (candidate.kind === "clipboard") {
+    return [
+      { id: "paste", title: "Paste", shortcut: "↵", section: "primary", icon: "" },
+      { id: "copy", title: "Copy to Clipboard", shortcut: "Ctrl ↵", section: "primary", icon: "" },
+      { id: "open-entry", title: "Open", shortcut: "Ctrl Shift ↵", section: "primary", icon: "" }
+    ]
+  }
   if (candidate.kind === "calculator" || candidate.kind === "calculator-history") {
     // ↵ copies, Ctrl ↵ pastes (SPEC §8 Calculator) [O]; delete keys are
     // the Windows `clear` shortcuts (ref 04 §2.8).

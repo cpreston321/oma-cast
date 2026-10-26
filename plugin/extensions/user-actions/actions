@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Offer omalaunch's user extensions to oma-cast's root search.
+
+Reads ~/.config/omarchy/omalaunch/extensions.d the way omalaunch does:
+  extensions.d/<name>/extension.json   with helper files beside it
+  extensions.d/<name>.json             when there are none
+  extensions.d/<name>/provider         an executable printing definitions
+
+Only "action" definitions (a fixed argv run on Enter) are carried over. The
+others take typed input in modes oma-cast does not have. Prints a script-menu
+document: {"items": [...]}.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.expanduser("~/.config/omarchy/omalaunch/extensions.d")
+MAX_ENTRIES = 256
+MAX_ITEMS = 200
+PROVIDER_TIMEOUT = 3
+
+
+def load_json(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def run_provider(path):
+    try:
+        out = subprocess.run(["./provider"], cwd=os.path.dirname(path), capture_output=True,
+                             timeout=PROVIDER_TIMEOUT, stdin=subprocess.DEVNULL)
+        return json.loads(out.stdout) if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def as_list(value):
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return value.get("extensions") if isinstance(value.get("extensions"), list) else [value]
+    return []
+
+
+def definitions():
+    """(definition, directory) pairs in omalaunch's order: static files, then providers."""
+    static, providers = [], []
+    try:
+        entries = sorted(os.scandir(ROOT), key=lambda e: e.name)[:MAX_ENTRIES]
+    except OSError:
+        return []
+    for entry in entries:
+        if entry.is_dir(follow_symlinks=False):
+            if os.path.isfile(os.path.join(entry.path, "extension.json")):
+                static.append((os.path.join(entry.path, "extension.json"), entry.path))
+            provider = os.path.join(entry.path, "provider")
+            if os.access(provider, os.X_OK):
+                providers.append(provider)
+        elif entry.is_file(follow_symlinks=False) and entry.name.endswith(".json"):
+            static.append((entry.path, ROOT))
+    found = []
+    for path, directory in static:
+        found += [(d, directory) for d in as_list(load_json(path))]
+    for provider in providers:
+        found += [(d, os.path.dirname(provider)) for d in as_list(run_provider(provider))]
+    return found
+
+
+def item(definition, directory):
+    if not isinstance(definition, dict) or definition.get("mode") != "action":
+        return None
+    command = definition.get("command")
+    if not isinstance(command, list) or not command or not all(isinstance(a, str) for a in command):
+        return None
+    requires = definition.get("requires") or []
+    if any(isinstance(r, str) and not shutil.which(r) for r in requires):
+        return None
+    ident, label = str(definition.get("id") or ""), str(definition.get("label") or "")
+    if not ident or not label:
+        return None
+    prefixes = [p for p in definition.get("prefixes") or [] if isinstance(p, str)]
+    return {
+        "id": ident,
+        "label": label,
+        "description": str(definition.get("rootDescription") or definition.get("description") or ""),
+        "icon": str(definition.get("icon") or ""),
+        "keywords": prefixes,
+        "command": [a.replace("{extensionDir}", directory) for a in command],
+        "closeOnDispatch": True,
+    }
+
+
+def main():
+    items, seen = [], set()
+    for definition, directory in definitions():
+        entry = item(definition, directory)
+        if entry and entry["id"] not in seen and len(items) < MAX_ITEMS:
+            seen.add(entry["id"])
+            items.append(entry)
+    json.dump({"items": items}, sys.stdout)
+
+
+if __name__ == "__main__":
+    main()

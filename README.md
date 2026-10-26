@@ -82,6 +82,46 @@ read credentials, or make model API calls. Successful preflight checks establish
 launch prerequisites, not successful sign-in or a running terminal; those still
 need live desktop validation.
 
+## Emoji, clipboard history and window layouts
+
+Ported from [omalaunch](https://github.com/cpreston321/omalaunch). Each one is a
+root command, so you can alias or favorite it like anything else.
+
+* **Search Emoji.** A grid of Omarchy's emoji set plus currency signs, grouped
+  by category with a *Frequently Used* row on top. Search matches word
+  prefixes (`smi fac` finds smiling faces). Arrow keys move around the grid,
+  `Ctrl+↑/↓` jumps between groups, `↵` pastes and `Ctrl+↵` copies.
+* **Clipboard History.** Reads Omarchy's own clipboard history. Shows text, files
+  and screenshots with a detail pane beside the list. `↵` pastes, `Ctrl+↵` copies
+  and `Ctrl+Shift+↵` opens the entry. oma-cast never writes the history.
+* **Window Layouts.** Save the current window arrangement and restore it later,
+  with a preview of each saved layout. Saved layouts also appear in root search
+  while you type (`gaming` → *Gaming*). `↵` applies, `Ctrl+↵` applies and launches
+  missing apps, and the rest (overwrite, rename, delete, edit in the
+  [layout designer](https://github.com/cpreston321/omalaunch-layout-designer))
+  are in `Ctrl+K`. Layouts live in `~/.local/state/omarchy/omalaunch-layouts`, so
+  ones saved with omalaunch carry over. Needs `python3`.
+* **omalaunch user extensions.** Action entries in
+  `~/.config/omarchy/omalaunch/extensions.d` (static `.json` files or a
+  `provider` executable) show up in root search while you type, e.g. a camera
+  from a UniFi provider. Other omalaunch modes aren't supported.
+
+### Bar button and Super+Space
+
+`oma-cast install-button` puts an Omarchy logo at the left of the bar that
+opens oma-cast. It is a separate plugin (`bar-button/`) copied in as plain files,
+because Qt won't load a bar widget through the symlinked plugin folder. To open
+oma-cast with Super+Space instead of the Omarchy menu, add this to
+`~/.config/hypr/bindings.lua`:
+
+```lua
+hl.unbind("SUPER + SPACE")
+o.bind("SUPER + SPACE", "oma-cast", hl.dsp.global("oma-cast:toggle"))
+```
+
+Keep `omarchy.menu` enabled: the theme, background and apps keys and Omarchy's
+scripts still open its routes.
+
 ## Keyboard
 
 | Key | Does |

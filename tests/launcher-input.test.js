@@ -5,8 +5,11 @@ const vm = require("node:vm")
 
 // Run the actual QML handlers without a desktop or Qt dependency in CI.
 const source = fs.readFileSync(require.resolve("../plugin/ui/LauncherWindow.qml"), "utf8")
-const handlers = ["isTyping", "handleKey"].map((name) => {
-  const match = source.match(new RegExp(`^  function ${name}\\(event\\) \\{[\\s\\S]*?^  \\}`, "m"))
+// handleKey's helpers come from the same file, so the paths under test run
+// the real key routing (action panel key, navigation, editor views).
+const names = ["isTyping", "handleKey", "isActionPanelKey", "direction", "handlePopupKey", "handleEditorKey"]
+const handlers = names.map((name) => {
+  const match = source.match(new RegExp(`^  function ${name}\\([^)]*\\) \\{[\\s\\S]*?^  \\}`, "m"))
   assert.ok(match, `missing QML handler ${name}`)
   return match[0]
 }).join("\n")
@@ -30,15 +33,19 @@ function input(kind = "root") {
   const panel = { filter: "", activateSelected() { actions.push("panel") } }
   const window = {
     view: { kind }, query: "", actionPanelOpen: false,
+    atRoot: kind === "root", argFocus: -1, argDefs: [], historyIndex: -1, vim: false,
+    emojiView: false, formActive: false,
+    get editor() { return ["alias", "script-input", "quicklink-form", "quicklink-import"].includes(this.view.kind) },
+    saveAlias() { actions.push("save-alias") },
     setQuery(text) { this.query = text },
     performNth(n) { actions.push(n) },
     nthItem(n) { return n - 1 },
     perform(action, index) { actions.push([action, index]) }
   }
-  const api = vm.runInNewContext(`${handlers}\n({ isTyping, handleKey })`, {
+  const api = vm.runInNewContext(`${handlers}\n({ ${names.join(", ")} })`, {
     Qt, window, actionPanel: panel, Util: { editsFilter() { return false } }
   })
-  window.isTyping = api.isTyping
+  for (const name of names) if (name !== "handleKey") window[name] = api[name]
   return { ...api, window, panel, actions }
 }
 

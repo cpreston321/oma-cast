@@ -2,111 +2,131 @@
 
 # oma-cast
 
-**A Raycast-esque launcher for [Omarchy](https://omarchy.org).**
-It learns what you use, searches your apps and every Omarchy action, and looks like it shipped with your theme.
+**A Raycast-esque launcher for [Omarchy](https://omarchy.org), with emoji, clipboard history, window layouts, snippets, quicklinks, a calculator and agent hand-offs built in.**
 
-<img src="docs/screenshots/hero.png" alt="oma-cast showing suggestions for apps and Omarchy commands" width="760">
+<img src="docs/screenshots/hero.png" alt="oma-cast root search with suggestions" width="760">
 
 </div>
 
 ---
 
-## Why
+This is my fork of [typecraft-dev/oma-cast](https://github.com/typecraft-dev/oma-cast). It keeps upstream's search, ranking and Omarchy integration and adds the features I used to get from [omalaunch](https://github.com/cpreston321/omalaunch), plus a reorganised Settings window.
 
-Omarchy's built-in menu is great at what it does. oma-cast adds what Raycast users miss on Linux:
+## What's in it
 
-* **Learns your habits.** Results are ranked with a port of Raycast's root-search algorithm, plus frecency and learned search terms. The things you actually use float to the top, and if you type `ff` and pick Firefox, `ff` keeps meaning Firefox.
-* **One search for everything.** Your apps, all ~400 Omarchy menu actions (with breadcrumbs and live ✓ state), web-search fallbacks, and an explicit hand-off to your default coding agent.
-* **Your shortcuts.** Give anything an alias, pin favorites, and hide the commands you never touch.
-* **Keyboard-first.** A Ctrl+K action panel, Ctrl+1–9 quick picks, search history on ↑, section jumping, and emacs-style navigation.
-* **Native to Omarchy.** It runs inside `omarchy-shell` as a plugin, with no Electron, no Node and no extra daemons. It opens in about 40 ms and follows your theme live when you run `omarchy theme set`.
+* **One search for everything.** Apps, all ~400 Omarchy menu actions (with breadcrumbs and live ✓ state), keybindings, files, snippets, quicklinks, saved layouts, calculations and web-search fallbacks.
+* **Learns your habits.** Raycast-style root-search ranking plus frecency and learned search terms: type `ff`, pick Firefox, and `ff` keeps meaning Firefox.
+* **Emoji, clipboard history and window layouts** as root commands, each with its own alias and hotkey.
+* **Snippets and quicklinks** with Raycast's placeholders, imports and exports.
+* **A calculator** for units, ~170 currencies, time zones, dates, bases and percentages.
+* **Your coding agent one keystroke away.** `?` asks Claude Code, Codex or whichever agents you have installed; ask about the selection, a clipboard entry or a file.
+* **A Settings window** with an Extensions page per feature, search across every setting, and advanced rows tucked away.
+* **Native to Omarchy.** A plugin for `omarchy-shell`: no Electron, no Node, no daemons. It opens in about 40 ms and follows `omarchy theme set` live.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/search.png" alt="Searching 'screen' shows Omarchy actions with breadcrumbs"></td>
+    <td width="50%"><img src="docs/screenshots/search.png" alt="Searching 'screen' shows Omarchy actions and keybindings"></td>
     <td width="50%"><img src="docs/screenshots/actions.png" alt="The Ctrl+K action panel"></td>
   </tr>
   <tr>
-    <td align="center"><b>Every Omarchy action, with breadcrumbs</b></td>
+    <td align="center"><b>Every Omarchy action and keybinding</b></td>
     <td align="center"><b>Ctrl+K: actions for any result</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/emoji.png" alt="The emoji grid with Frequently Used"></td>
+    <td><img src="docs/screenshots/layouts.png" alt="Window Layouts with a preview of a saved layout"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Search Emoji</b></td>
+    <td align="center"><b>Window Layouts, with a preview</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/calculator.png" alt="100 usd to eur and gbp"></td>
+    <td><img src="docs/screenshots/calc-units.png" alt="5 ft 10 in converts to 177.8 cm"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Currencies, several at once</b></td>
+    <td align="center"><b>Units convert on their own</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/snippets.png" alt="Search Snippets with a preview"></td>
+    <td><img src="docs/screenshots/quicklinks.png" alt="Search Quicklinks with an argument pill"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Snippets and AI Commands</b></td>
+    <td align="center"><b>Quicklinks with arguments</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/ask.png" alt="? lists an Ask row per installed agent"></td>
+    <td><img src="docs/screenshots/fallbacks.png" alt="Web-search and agent fallbacks under the results"></td>
+  </tr>
+  <tr>
+    <td align="center"><b><code>?</code> asks any installed agent</b></td>
+    <td align="center"><b>No match? Search the web or ask your agent</b></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/screenshots/fallbacks.png" alt="Web-search fallbacks under the results" width="49%">
+  <img src="docs/screenshots/settings.png" alt="Settings → Extensions → Calculator" width="49%">
+  <img src="docs/screenshots/settings-search.png" alt="Searching settings for 'currency'" width="49%">
 </p>
-<p align="center"><b>No match? Send the query to Google or DuckDuckGo</b></p>
+<p align="center"><b>Settings: one page per extension, and search across every setting</b></p>
 
-### Follows your Omarchy theme
-
-There's no theme config. oma-cast binds to Omarchy's own colours, so it changes the moment you switch themes.
-
-<img src="docs/screenshots/themes.png" alt="oma-cast in Tokyo Night, Gruvbox, Rose Pine, Flexoki Light, Everforest and Osaka Jade">
+There's no theme config: oma-cast binds to Omarchy's own colours, so it changes the moment you switch themes.
 
 ## Install
 
 Requires Omarchy 4 (Hyprland 0.56+, `omarchy-shell`) and `socat`, which Omarchy already ships.
 
 ```sh
-git clone https://github.com/typecraft-dev/oma-cast.git
+git clone https://github.com/cpreston321/oma-cast.git
 cd oma-cast
 bin/oma-cast install          # link the plugin into omarchy-shell and the CLI into ~/.local/bin
 oma-cast setup hyprland       # bind Alt+Space
 oma-cast doctor               # check everything is wired up
 ```
 
-Press **Alt+Space**. Super+Space stays the Omarchy menu. You can change the launcher binding in `~/.config/hypr/oma-cast.lua`.
+Press **Alt+Space**. Super+Space stays the Omarchy menu. You can change the launcher binding in `~/.config/hypr/oma-cast.lua`, or in Settings → General.
 
 To remove it: `oma-cast uninstall`.
 
-## Ask your default agent
+## Ask your agent
 
-Type a question, select **Ask default agent** under the web-search fallbacks,
-and press Enter. **Ctrl+Alt+Enter** sends the current root-search text directly.
-This opens a new session with your question in Omarchy's configured default
-agent and terminal (Foot, Ghostty, Kitty or Alacritty).
-
-The action checks your setup first. Missing agent/terminal setup leaves the
-launcher open with your question and an error. Closing the launcher during the
-check cancels the pending hand-off. Normal app search and Enter selection keep
-working as before; typing alone never submits a question.
-
-Requires an Omarchy version with `omarchy-agent-prompt` and
-`omarchy-agent --prompt` (verified against `quattro` revision `3ac4365`). Select
-your defaults in Omarchy Settings. Agent authentication, accounts, approval
-behaviour, session working directory and terminal selection remain owned by
-Omarchy and the agent CLI. oma-cast does not store the question in search history,
-read credentials, or make model API calls. Successful preflight checks establish
-launch prerequisites, not successful sign-in or a running terminal; those still
-need live desktop validation.
-
-More ways to ask (fork). Each one still opens a terminal session with the agent;
-nothing is answered inside oma-cast:
+Nothing is answered inside oma-cast: each of these opens a new terminal session
+with your question in the agent, through Omarchy's own launcher
+(`omarchy-agent`), in Omarchy's default terminal.
 
 * **`?` then a space and your question** lists one **Ask** row per installed
   agent, your default first. Settings → Extensions → AI changes the prefix or turns it off.
+* **Ask default agent** sits under the web-search fallbacks for any query;
+  **Ctrl+Alt+Enter** sends the root-search text straight to it. **Ctrl+K** on it
+  asks one of your other agents instead, for that question only.
 * **Ask Agent** takes the question in a pill, so it can have its own hotkey or
   alias. **Ask About Selection** asks about the text you had selected in the app
   you came from.
 * **Ctrl+K → Ask Agent About This** on a clipboard entry (its text, or an image's
   file) or a file or folder (the session starts in its folder).
-* **Ctrl+K** on **Ask default agent** asks one of your other agents instead,
-  for that question only; your default stays as it is.
 * **AI Commands**: a snippet with *Send to your agent instead of pasting* turned
   on. ↵ fills its placeholders, including `{selection}`, and sends the text to
   your agent.
 
 An agent counts as installed when Omarchy has installed it (its
-install-on-first-use wrapper alone doesn't count). Settings → Extensions → AI also picks the
-default agent (saved where `omarchy-default-agent` saves it, without starting a
-session), shows each agent's plan usage from Omarchy's usage records, and sets
-the folder sessions start in.
+install-on-first-use wrapper alone doesn't count). Settings → Extensions → AI
+picks the default agent (saved where `omarchy-default-agent` saves it, without
+starting a session), shows each agent's plan usage from Omarchy's usage
+records, and sets the folder sessions start in.
+
+The setup is checked first: a missing agent or terminal leaves the launcher
+open with your question and an error. Needs an Omarchy with
+`omarchy-agent-prompt` and `omarchy-agent --prompt`. Sign-in, approvals and the
+terminal stay with Omarchy and the agent CLI; oma-cast doesn't keep the
+question in search history, read credentials or call any model API.
 
 ## Emoji, clipboard history and window layouts
 
-Ported from [omalaunch](https://github.com/cpreston321/omalaunch). Each one is a
+Carried over from [omalaunch](https://github.com/cpreston321/omalaunch). Each one is a
 root command, so you can alias or favorite it like anything else.
 
 * **Search Emoji.** A grid of Omarchy's emoji set plus currency signs, grouped
@@ -256,22 +276,6 @@ oma-cast call <method> [json]    # call any backend method
 oma-cast doctor
 ```
 
-## Roadmap
-
-oma-cast is early. Search, ranking and the Omarchy integration are done. Coming next:
-
-- [x] Settings window
-- [ ] Script Commands
-- [x] Quicklinks
-- [x] Calculator
-- [x] Clipboard history
-- [x] Snippets (from the launcher; keyword expansion in other apps not yet)
-- [ ] Running Raycast extensions built from the open-source [`raycast/extensions`](https://github.com/raycast/extensions) repo
-- [ ] Window management
-- [ ] Importing your `.rayconfig` from macOS
-
-The full plan is in [`SPEC.md`](SPEC.md).
-
 ## Development
 
 ```sh
@@ -287,4 +291,6 @@ Quickshell caches QML for the life of the process, so run `oma-cast reload` afte
 
 ## Notes
 
-oma-cast is an independent, clean-room project. It isn't affiliated with or endorsed by Raycast, and it contains no Raycast code or assets. It never contacts Raycast's servers and has no telemetry. Its agent action explicitly hands your question to Omarchy's existing coding-agent launcher; it provides no embedded AI runtime.
+A fork of [typecraft-dev/oma-cast](https://github.com/typecraft-dev/oma-cast); the full upstream plan is in [`SPEC.md`](SPEC.md).
+
+oma-cast is an independent, clean-room project. It isn't affiliated with or endorsed by Raycast, and it contains no Raycast code or assets. It never contacts Raycast's servers and has no telemetry. The agent features hand your question to Omarchy's own coding-agent launcher; there's no embedded AI runtime.

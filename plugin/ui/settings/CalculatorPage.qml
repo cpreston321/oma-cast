@@ -24,6 +24,20 @@ SettingsPage {
   }
   property bool confirmClear: false
 
+  // Each unit a lone amount converts (Calculator.conversionOptions).
+  readonly property var conversions: {
+    page.backend.config
+    var r = page.backend.callSync("calculator.conversionOptions", null)
+    return r.ok ? r.data : []
+  }
+  readonly property int changedConversions: page.conversions.filter(function(c) { return c.changed }).length
+
+  function labelFor(row, sym) {
+    if (sym === "none") return "Don't convert"
+    var c = row.choices.filter(function(x) { return x.value === sym })[0]
+    return c ? c.label : sym
+  }
+
   // "Automatic (US Dollar (USD))", then every currency with a rate.
   function currencyOptions(automatic) {
     var names = page.currencies.names || ({})
@@ -133,6 +147,71 @@ SettingsPage {
           page.confirmClear = false
           var r = page.backend.callSync("calculator.historyDeleteAll", null)
           page.host.flash(r.ok ? "Calculator History cleared" : r.error, !r.ok)
+        }
+      }
+    }
+    Item { width: 1; height: Style.space(18) }
+    Item {
+      width: parent ? parent.width : 0
+      height: Style.space(30)
+      FieldLabel { anchors.verticalCenter: parent.verticalCenter; look: page.look; text: "WHEN YOU TYPE JUST AN AMOUNT" }
+      Button {
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        visible: page.changedConversions > 0
+        text: "Reset " + page.changedConversions + (page.changedConversions === 1 ? " change" : " changes")
+        onClicked: {
+          var r = page.backend.callSync("calculator.resetConversions", null)
+          page.host.flash(r.ok ? "Conversions reset to the defaults" : r.error, !r.ok)
+        }
+      }
+    }
+    Text {
+      width: parent ? parent.width : 0
+      textFormat: Text.PlainText
+      text: "“16rem” or “5 kg” on its own converts to the unit below. Naming a target (“5 kg to g”) always wins."
+      color: page.look.muted
+      wrapMode: Text.Wrap
+      font.family: page.look.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      bottomPadding: Style.space(4)
+    }
+
+    Repeater {
+      model: page.conversions
+
+      Column {
+        id: conversion
+        required property var modelData
+        required property int index
+        width: parent ? parent.width : 0
+        readonly property bool firstOfKind: conversion.index === 0 || page.conversions[conversion.index - 1].kind !== conversion.modelData.kind
+
+        Text {
+          visible: conversion.firstOfKind
+          textFormat: Text.PlainText
+          text: conversion.modelData.kind
+          color: page.look.foreground
+          font.family: page.look.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+          topPadding: Style.space(12)
+          bottomPadding: Style.space(2)
+        }
+        SettingRow {
+          look: page.look
+          label: conversion.modelData.name + " (" + conversion.modelData.from + ")"
+          description: conversion.modelData.changed ? "Default: " + page.labelFor(conversion.modelData, conversion.modelData.defaultTarget) : ""
+          Dropdown {
+            width: Style.space(260)
+            showLabel: false
+            options: [{ value: "none", label: "Don't convert" }].concat(conversion.modelData.choices)
+            value: conversion.modelData.target
+            onChanged: function(v) {
+              var r = page.backend.callSync("calculator.setConversion", { from: conversion.modelData.from, target: v })
+              if (!r.ok) page.host.flash(r.error, true)
+            }
+          }
         }
       }
     }

@@ -202,7 +202,10 @@ var configDefaults = {
   // secondCurrency. "auto": the locale's currency, then EUR (USD for euro
   // users). Otherwise an ISO code. [D]
   homeCurrency: "auto",
-  secondCurrency: "auto"
+  secondCurrency: "auto",
+  // What a lone amount converts to, where it isn't the default: {"kg": "g",
+  // "°F": "none"} (Calculator.conversionOptions lists the choices). [D]
+  conversionTargets: {}
 }
 
 // Values a config key or general setting may take, beyond its type.
@@ -227,6 +230,11 @@ function validConfigValue(key, value) {
   if (typeof value !== typeof configDefaults[key]) return false
   if (configChoices[key]) return configChoices[key].indexOf(value) >= 0
   if (key === "homeCurrency" || key === "secondCurrency") return /^(auto|[A-Z]{3})$/.test(value)
+  if (key === "conversionTargets") {
+    if (!value || Array.isArray(value) || Object.keys(value).length > 200) return false
+    for (var k in value) if (typeof value[k] !== "string" || value[k].length > 32 || k.length > 32) return false
+    return true
+  }
   if (typeof value === "number") return isFinite(value) && value > 0
   return true
 }

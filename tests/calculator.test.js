@@ -303,3 +303,27 @@ test("shared currency words follow your currency, else the most common", () => {
   assert.deepEqual(w("100 pounds to dollars", { homeCurrency: "EGP" }), ["$2.02"])
   assert.deepEqual(w("150 pounds to kg"), ["68.0389 kg"], "a weight without money")
 })
+
+// ---- fork: configurable lone conversions
+
+test("conversionTargets change what a lone amount converts to", () => {
+  const set = (targets) => Object.assign({}, env, { conversionTargets: targets })
+  assert.equal(result("5 kg", set({ kg: "g" })), "5,000 g")
+  assert.equal(result("16rem", set({ rem: "pt" })), "192 pt")
+  assert.equal(C.evaluate("100 f", set({ "°F": "none" })), null, "none switches it off")
+  assert.equal(result("100 f to c", set({ "°F": "none" })), "37.7778 °C", "a named target still works")
+  assert.equal(result("5 kg", set({ kg: "nope" })), "11.0231 lb", "an unknown unit falls back to the default")
+  assert.equal(result("5 kg", set({ kg: "km" })), "11.0231 lb", "so does a different kind")
+  assert.equal(result("2 pints", set({ pints: "L" })), "0.9464 L", "units known only by name work too")
+})
+
+test("conversionOptions lists each default with its choices and current target", () => {
+  const rows = C.conversionOptions({ kg: "g", "°F": "none", rem: "bogus" })
+  const row = (sym) => rows.find((r) => r.from === sym)
+  assert.ok(rows.length > 40)
+  assert.deepEqual([row("kg").target, row("kg").defaultTarget, row("kg").changed, row("kg").kind], ["g", "lb", true, "Weight"])
+  assert.deepEqual([row("°F").target, row("°F").changed], ["none", true])
+  assert.deepEqual([row("rem").target, row("rem").changed], ["px", false], "an invalid choice shows the default")
+  assert.ok(row("kg").choices.some((c) => c.value === "oz") && !row("kg").choices.some((c) => c.value === "kg"), "same kind, not itself")
+  assert.deepEqual(row("°C").choices.map((c) => c.value).sort(), ["K", "°F"])
+})

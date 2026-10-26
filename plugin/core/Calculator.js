@@ -524,10 +524,71 @@ var COUNTERPARTS = [
 ]
 var NAMED_COUNTERPARTS = [["pints", "mL"], ["tons", "kg"]]
 
+// Every named, non-currency unit by its display symbol (sym), including the
+// ones registered only by name (pints, tons).
+var UNIT_BY_SYM = {}
+;(function() {
+  var all = Object.keys(UNITS).map(function(k) { return UNITS[k] }).concat(Object.keys(UNIT_NAMES).map(function(k) { return UNIT_NAMES[k] }))
+  for (var i = 0; i < all.length; i++) if (!all[i].currency && !UNIT_BY_SYM[all[i].sym]) UNIT_BY_SYM[all[i].sym] = all[i]
+})()
+
+// [from sym, default target sym] for each unit a lone amount converts.
+function counterpartDefaults() {
+  var out = []
+  for (var i = 0; i < COUNTERPARTS.length; i++) if (UNITS[COUNTERPARTS[i][0]]) out.push([UNITS[COUNTERPARTS[i][0]].sym, UNITS[COUNTERPARTS[i][1]].sym])
+  for (var j = 0; j < NAMED_COUNTERPARTS.length; j++) if (UNIT_NAMES[NAMED_COUNTERPARTS[j][0]]) out.push([UNIT_NAMES[NAMED_COUNTERPARTS[j][0]].sym, UNITS[NAMED_COUNTERPARTS[j][1]].sym])
+  return out
+}
+
+// The default target, unless config.json conversionTargets (env) names
+// another unit of the same kind, or "none". Anything else is ignored.
 function counterpart(unit) {
-  for (var i = 0; i < COUNTERPARTS.length; i++) if (UNITS[COUNTERPARTS[i][0]] === unit) return UNITS[COUNTERPARTS[i][1]] || null
-  for (var j = 0; j < NAMED_COUNTERPARTS.length; j++) if (UNIT_NAMES[NAMED_COUNTERPARTS[j][0]] === unit) return UNITS[NAMED_COUNTERPARTS[j][1]] || null
-  return null
+  var defaults = counterpartDefaults()
+  var entry = defaults.filter(function(d) { return d[0] === unit.sym })[0]
+  if (!entry) return null
+  var overrides = ENV && ENV.conversionTargets
+  if (overrides && Object.prototype.hasOwnProperty.call(overrides, unit.sym)) {
+    var want = overrides[unit.sym]
+    if (want === "none") return null
+    var chosen = UNIT_BY_SYM[want]
+    if (chosen && chosen !== unit && sameDims(chosen.dims, unit.dims)) return chosen
+  }
+  return UNIT_BY_SYM[entry[1]] || null
+}
+
+var KIND_NAMES = { "L1": "Length", "M1": "Weight", "K1": "Temperature", "L3": "Volume", "L1 T-1": "Speed", "L2": "Area",
+  "M1 L2 T-3": "Power", "M1 L2 T-2": "Energy", "M1 L-1 T-2": "Pressure", "A1": "Angle", "D1": "Data", "P1": "CSS" }
+
+function kindName(unit) {
+  var key = dimsKey(unit.dims)
+  for (var k in KIND_NAMES) if (dimsKey(dims(parseKind(k))) === key) return KIND_NAMES[k]
+  return "Other"
+}
+function parseKind(text) {
+  var d = {}
+  text.split(" ").forEach(function(part) { var m = /^([A-Z])(-?\d+)$/.exec(part); if (m) d[m[1]] = +m[2] })
+  return d
+}
+
+// For Settings: each unit a lone amount converts, its default and current
+// target, and the units it could convert to instead (smallest first).
+// overrides: config.json conversionTargets.
+function conversionOptions(overrides) {
+  var syms = Object.keys(UNIT_BY_SYM)
+  return counterpartDefaults().map(function(d) {
+    var from = UNIT_BY_SYM[d[0]]
+    var choices = syms.map(function(s) { return UNIT_BY_SYM[s] })
+      .filter(function(u) { return u !== from && sameDims(u.dims, from.dims) })
+      .sort(function(a, b) { return toBase(1, a) - toBase(1, b) })
+      .map(function(u) { return { value: u.sym, label: titleCase(u.plural) + " (" + u.sym + ")" } })
+    var set = overrides && Object.prototype.hasOwnProperty.call(overrides, d[0]) ? overrides[d[0]] : ""
+    var valid = set === "none" || choices.some(function(c) { return c.value === set })
+    return {
+      from: d[0], name: titleCase(from.plural), kind: kindName(from),
+      defaultTarget: d[1], target: valid && set ? set : d[1], changed: !!(valid && set && set !== d[1]),
+      choices: choices
+    }
+  })
 }
 
 // ------------------------------------------------------------- vocabulary
@@ -1765,6 +1826,7 @@ if (typeof module !== "undefined") {
     words: numberWords,
     zoneList: zoneList,
     localeCurrency: localeCurrency,
+    conversionOptions: conversionOptions,
     currencyName: currencyName,
     pushHistory: pushHistory,
     filterHistory: filterHistory,

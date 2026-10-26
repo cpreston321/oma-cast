@@ -190,7 +190,8 @@ Item {
       remToPxRate: backend.config.remToPxRate,
       workHoursPerDay: backend.config.workHoursPerDay,
       homeCurrency: backend.homeCurrency(),
-      secondCurrency: backend.secondCurrency()
+      secondCurrency: backend.secondCurrency(),
+      conversionTargets: backend.config.conversionTargets
     }
   }
 
@@ -1485,6 +1486,22 @@ Item {
         calculatorData.fetchRates()
         return null
       },
+      // Settings: every unit a lone amount converts, with its target and choices.
+      conversionOptions: function() { return Calculator.conversionOptions(backend.config.conversionTargets) },
+      // {from, target}: target "" restores the default.
+      setConversion: function(data) {
+        var from = String(data && data.from || "")
+        var target = String(data && data.target || "")
+        var row = Calculator.conversionOptions({}).filter(function(o) { return o.from === from })[0]
+        if (!row) throw new Error("No default conversion for " + from)
+        if (target && target !== "none" && !row.choices.some(function(c) { return c.value === target })) throw new Error(target + " is not a kind of " + row.kind.toLowerCase())
+        var next = Object.assign({}, backend.config.conversionTargets || {})
+        if (!target || target === row.defaultTarget) delete next[from]
+        else next[from] = target
+        backend.updateConfig({ conversionTargets: next })
+        return Calculator.conversionOptions(next).filter(function(o) { return o.from === from })[0]
+      },
+      resetConversions: function() { backend.updateConfig({ conversionTargets: {} }); return null },
       getCurrencies: function() {
         var r = calculatorData.rates
         return {
